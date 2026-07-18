@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:applyflow;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+applyflow:
+  auth:
+    jwt-secret: test-only-secret-that-is-at-least-32-bytes
+    access-token-minutes: 15
+    refresh-token-days: 30
+    refresh-cookie-secure: false

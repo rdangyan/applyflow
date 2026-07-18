@@ -1,0 +1,20 @@
+{
+  "name": "applyflow",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "install:frontend": "npm --prefix frontend ci",
+    "generate:api": "npm --prefix frontend run generate:api",
+    "check:api": "npm --prefix frontend run check:api",
+    "lint": "npm --prefix frontend run lint",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "test:frontend": "npm --prefix frontend test",
+    "test:backend": "node scripts/maven.mjs test",
+    "test": "npm run test:frontend && npm run test:backend",
+    "build": "npm --prefix frontend run build && node scripts/maven.mjs package -DskipTests"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  }
+}

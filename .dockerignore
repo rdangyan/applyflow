@@ -1,0 +1,12 @@
+.git
+.github
+.agents
+.codex
+docs
+PRD.md
+**/node_modules
+frontend/dist
+backend/target
+.mvn/apache-maven-*
+*.log
+.env*

@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: applyflow
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/applyflow}
+    username: ${DATABASE_USERNAME:applyflow}
+    password: ${DATABASE_PASSWORD:applyflow}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        hbm2ddl.auto: validate
+  mvc:
+    problemdetails:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  forward-headers-strategy: framework
+
+applyflow:
+  auth:
+    jwt-secret: ${JWT_SECRET:local-development-secret-change-me-32-bytes}
+    access-token-minutes: 15
+    refresh-token-days: 30
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
