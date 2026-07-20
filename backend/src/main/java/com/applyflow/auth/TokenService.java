@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.UUID;
 
 @Service
 class TokenService {
@@ -27,13 +28,14 @@ class TokenService {
         this.properties = properties;
     }
 
-    String accessToken(UserAccount user, Instant now) {
+    String accessToken(UUID userId, String email, UUID sessionId, Instant now) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer("applyflow")
                 .issuedAt(now)
                 .expiresAt(now.plus(properties.accessTokenMinutes(), ChronoUnit.MINUTES))
-                .subject(user.getId().toString())
-                .claim("email", user.getEmail())
+                .subject(userId.toString())
+                .claim("email", email)
+                .claim("sid", sessionId.toString())
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

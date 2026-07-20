@@ -9,6 +9,8 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { AuthResponse } from './models/AuthResponse';
 export type { CurrentUser } from './models/CurrentUser';
+export type { DeviceSession } from './models/DeviceSession';
+export type { DeviceSessionsResponse } from './models/DeviceSessionsResponse';
 export type { LoginRequest } from './models/LoginRequest';
 export type { ProblemDetail } from './models/ProblemDetail';
 export type { RegisterRequest } from './models/RegisterRequest';

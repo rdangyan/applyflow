@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { AuthResponse } from '../models/AuthResponse';
 import type { CurrentUser } from '../models/CurrentUser';
+import type { DeviceSessionsResponse } from '../models/DeviceSessionsResponse';
 import type { LoginRequest } from '../models/LoginRequest';
 import type { ProblemDetail } from '../models/ProblemDetail';
 import type { RegisterRequest } from '../models/RegisterRequest';
@@ -49,7 +50,7 @@ export class AuthenticationService {
     }
     /**
      * Restore an access token from the refresh cookie
-     * @returns AuthResponse Identity restored
+     * @returns AuthResponse Identity restored and the refresh token rotated
      * @returns ProblemDetail An RFC 9457 API problem
      * @throws ApiError
      */
@@ -80,6 +81,47 @@ export class AuthenticationService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/auth/me',
+        });
+    }
+    /**
+     * List the user's active device sessions
+     * @returns DeviceSessionsResponse Active sessions, with no refresh-token values
+     * @returns ProblemDetail An RFC 9457 API problem
+     * @throws ApiError
+     */
+    public static listSessions(): CancelablePromise<DeviceSessionsResponse | ProblemDetail> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/auth/sessions',
+        });
+    }
+    /**
+     * Revoke one owned device session
+     * @returns ProblemDetail An RFC 9457 API problem
+     * @throws ApiError
+     */
+    public static revokeSession({
+        sessionId,
+    }: {
+        sessionId: string,
+    }): CancelablePromise<ProblemDetail> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/auth/sessions/{sessionId}',
+            path: {
+                'sessionId': sessionId,
+            },
+        });
+    }
+    /**
+     * Revoke every refresh session owned by the current user
+     * @returns ProblemDetail An RFC 9457 API problem
+     * @throws ApiError
+     */
+    public static logoutEverywhere(): CancelablePromise<ProblemDetail> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/auth/logout-all',
         });
     }
 }

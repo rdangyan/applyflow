@@ -6,6 +6,7 @@ import {
   OpenAPI,
   type AuthResponse,
   type CurrentUser,
+  type DeviceSession,
   type LoginRequest,
   type ProblemDetail,
   type RegisterRequest,
@@ -21,9 +22,24 @@ type AuthContextValue = {
   login: (request: LoginRequest) => Promise<void>
   register: (request: RegisterRequest) => Promise<void>
   logout: () => Promise<void>
+  listSessions: () => Promise<DeviceSession[]>
+  revokeSession: (session: DeviceSession) => Promise<void>
+  logoutEverywhere: () => Promise<void>
+  validateSession: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+let pendingRestoration: Promise<AuthResponse | ProblemDetail> | null = null
+
+function restoreAuthentication() {
+  if (pendingRestoration) return pendingRestoration
+  const request = Promise.resolve(AuthenticationService.refresh())
+  const shared = request.finally(() => {
+    if (pendingRestoration === shared) pendingRestoration = null
+  })
+  pendingRestoration = shared
+  return shared
+}
 
 function isAuthResponse(value: AuthResponse | ProblemDetail): value is AuthResponse {
   return 'accessToken' in value
@@ -38,28 +54,49 @@ export function problemMessage(error: unknown, fallback: string) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ kind: 'restoring' })
+  const [accessExpiresAt, setAccessExpiresAt] = useState<number | null>(null)
+
+  const becomeAnonymous = useCallback(() => {
+    OpenAPI.TOKEN = undefined
+    setAccessExpiresAt(null)
+    setState({ kind: 'anonymous' })
+  }, [])
 
   const accept = useCallback(async (response: AuthResponse) => {
     OpenAPI.TOKEN = response.accessToken
     const current = await AuthenticationService.getCurrentUser()
     if (!('id' in current)) throw new Error(current.detail)
+    setAccessExpiresAt(Date.now() + response.expiresIn * 1000)
     setState({ kind: 'authenticated', user: current })
   }, [])
 
   useEffect(() => {
     let active = true
-    AuthenticationService.refresh()
+    restoreAuthentication()
       .then(async (response) => {
         if (!active) return
         if (isAuthResponse(response)) await accept(response)
-        else setState({ kind: 'anonymous' })
+        else becomeAnonymous()
       })
       .catch(() => {
-        OpenAPI.TOKEN = undefined
-        if (active) setState({ kind: 'anonymous' })
+        if (active) becomeAnonymous()
       })
     return () => { active = false }
-  }, [accept])
+  }, [accept, becomeAnonymous])
+
+  useEffect(() => {
+    if (state.kind !== 'authenticated' || accessExpiresAt === null) return
+    const delay = Math.max(1_000, accessExpiresAt - Date.now() - 30_000)
+    const timer = window.setTimeout(() => {
+      AuthenticationService.refresh()
+        .then(async (response) => {
+          if (isAuthResponse(response)) await accept(response)
+          else becomeAnonymous()
+        })
+        .catch(becomeAnonymous)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [state.kind, accessExpiresAt, accept, becomeAnonymous])
 
   const login = useCallback(async (request: LoginRequest) => {
     const response = await AuthenticationService.login({ requestBody: request })
@@ -77,12 +114,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await AuthenticationService.logout()
     } finally {
-      OpenAPI.TOKEN = undefined
-      setState({ kind: 'anonymous' })
+      becomeAnonymous()
     }
-  }, [])
+  }, [becomeAnonymous])
 
-  const value = useMemo(() => ({ state, login, register, logout }), [state, login, register, logout])
+  const listSessions = useCallback(async () => {
+    try {
+      const response = await AuthenticationService.listSessions()
+      if (!('sessions' in response)) throw new Error(response.detail)
+      return response.sessions
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) becomeAnonymous()
+      throw error
+    }
+  }, [becomeAnonymous])
+
+  const revokeSession = useCallback(async (session: DeviceSession) => {
+    try {
+      await AuthenticationService.revokeSession({ sessionId: session.id })
+      if (session.current) becomeAnonymous()
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) becomeAnonymous()
+      throw error
+    }
+  }, [becomeAnonymous])
+
+  const validateSession = useCallback(async () => {
+    try {
+      const current = await AuthenticationService.getCurrentUser()
+      if (!('id' in current)) {
+        becomeAnonymous()
+        return false
+      }
+      return true
+    } catch {
+      becomeAnonymous()
+      return false
+    }
+  }, [becomeAnonymous])
+
+  const logoutEverywhere = useCallback(async () => {
+    try {
+      await AuthenticationService.logoutEverywhere()
+    } finally {
+      becomeAnonymous()
+    }
+  }, [becomeAnonymous])
+
+  const value = useMemo(
+    () => ({ state, login, register, logout, listSessions, revokeSession, logoutEverywhere, validateSession }),
+    [state, login, register, logout, listSessions, revokeSession, logoutEverywhere, validateSession],
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

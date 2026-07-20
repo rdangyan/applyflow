@@ -51,7 +51,9 @@ paths:
       summary: Restore an access token from the refresh cookie
       responses:
         '200':
-          description: Identity restored
+          description: Identity restored and the refresh token rotated
+          headers:
+            Set-Cookie: { schema: { type: string } }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthResponse' }
@@ -78,6 +80,45 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CurrentUser' }
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/v1/auth/sessions:
+    get:
+      operationId: listSessions
+      tags: [Authentication]
+      summary: List the user's active device sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active sessions, with no refresh-token values
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceSessionsResponse' }
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/v1/auth/sessions/{sessionId}:
+    delete:
+      operationId: revokeSession
+      tags: [Authentication]
+      summary: Revoke one owned device session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session revoked, or it was not an active session owned by the user }
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/v1/auth/logout-all:
+    post:
+      operationId: logoutEverywhere
+      tags: [Authentication]
+      summary: Revoke every refresh session owned by the current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: All device sessions revoked and the refresh cookie cleared }
         default:
           $ref: '#/components/responses/Problem'
   /api/v1/system/status:
@@ -137,6 +178,22 @@ components:
         accessToken: { type: string, description: A 15-minute JWT held by the SPA in memory }
         expiresIn: { type: integer, format: int64, example: 900 }
         user: { $ref: '#/components/schemas/CurrentUser' }
+    DeviceSession:
+      type: object
+      required: [id, createdAt, lastUsedAt, expiresAt, current]
+      properties:
+        id: { type: string, format: uuid, description: Stable identifier for this device session }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, description: Earlier of inactivity and absolute expiration }
+        current: { type: boolean }
+    DeviceSessionsResponse:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/DeviceSession' }
     SystemStatus:
       type: object
       required: [status, version, database]

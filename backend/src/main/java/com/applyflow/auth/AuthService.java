@@ -6,8 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -16,13 +15,13 @@ import static com.applyflow.auth.AuthDtos.*;
 @Service
 class AuthService {
     private final UserAccountRepository users;
-    private final RefreshSessionRepository sessions;
+    private final RefreshSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokens;
     private final AuthProperties properties;
     private final Clock clock;
 
-    AuthService(UserAccountRepository users, RefreshSessionRepository sessions, PasswordEncoder passwordEncoder,
+    AuthService(UserAccountRepository users, RefreshSessionService sessions, PasswordEncoder passwordEncoder,
                 TokenService tokens, AuthProperties properties) {
         this.users = users;
         this.sessions = sessions;
@@ -59,13 +58,16 @@ class AuthService {
         return issue(user);
     }
 
-    @Transactional(readOnly = true)
-    AuthResponse refresh(String refreshToken) {
-        Instant now = clock.instant();
-        RefreshSession session = sessions.findByTokenHash(tokens.hashRefreshToken(refreshToken))
-                .filter(candidate -> candidate.isActiveAt(now))
-                .orElseThrow(() -> new AuthenticationException("Authentication is required", "INVALID_SESSION"));
-        return response(session.getUser(), now);
+    IssuedAuthentication refresh(String refreshToken) {
+        RefreshSessionService.RotationResult result = sessions.rotate(refreshToken);
+        if (result.status() == RefreshSessionService.RotationResult.Status.REPLAYED) {
+            throw new AuthenticationException("Refresh token reuse was detected", "REFRESH_TOKEN_REUSED");
+        }
+        if (result.status() != RefreshSessionService.RotationResult.Status.SUCCESS) {
+            throw new AuthenticationException("Authentication is required", "INVALID_SESSION");
+        }
+        RefreshSessionService.SessionToken session = result.sessionToken();
+        return authentication(session);
     }
 
     @Transactional(readOnly = true)
@@ -81,26 +83,48 @@ class AuthService {
 
     @Transactional
     void logout(String refreshToken) {
-        if (refreshToken == null || refreshToken.isBlank()) return;
-        sessions.findByTokenHash(tokens.hashRefreshToken(refreshToken))
-                .filter(session -> session.isActiveAt(clock.instant()))
-                .ifPresent(session -> session.revoke(clock.instant()));
+        sessions.logout(refreshToken);
+    }
+
+    DeviceSessionsResponse sessions(String subject, String sessionId) {
+        UUID userId = parseUuid(subject, "INVALID_ACCESS_TOKEN");
+        UUID currentSessionId = parseUuid(sessionId, "INVALID_ACCESS_TOKEN");
+        List<DeviceSession> active = sessions.activeSessions(userId, currentSessionId);
+        return new DeviceSessionsResponse(active);
+    }
+
+    boolean revokeSession(String subject, UUID sessionId) {
+        return sessions.revoke(parseUuid(subject, "INVALID_ACCESS_TOKEN"), sessionId);
+    }
+
+    void logoutEverywhere(String subject) {
+        sessions.revokeAll(parseUuid(subject, "INVALID_ACCESS_TOKEN"));
     }
 
     private IssuedAuthentication issue(UserAccount user) {
-        Instant now = clock.instant();
-        String refreshToken = tokens.newRefreshToken();
-        sessions.save(new RefreshSession(UUID.randomUUID(), user, tokens.hashRefreshToken(refreshToken), now,
-                now.plus(properties.refreshTokenDays(), ChronoUnit.DAYS)));
-        return new IssuedAuthentication(response(user, now), refreshToken);
+        RefreshSessionService.SessionToken session = sessions.create(user);
+        return authentication(session);
     }
 
-    private AuthResponse response(UserAccount user, Instant now) {
-        return new AuthResponse(tokens.accessToken(user, now), properties.accessTokenMinutes() * 60, CurrentUser.from(user));
+    private IssuedAuthentication authentication(RefreshSessionService.SessionToken session) {
+        CurrentUser user = new CurrentUser(session.userId(), session.email(), session.userCreatedAt());
+        AuthResponse response = new AuthResponse(
+                tokens.accessToken(session.userId(), session.email(), session.familyId(), session.issuedAt()),
+                properties.accessTokenMinutes() * 60,
+                user);
+        return new IssuedAuthentication(response, session.rawToken());
     }
 
     private static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static UUID parseUuid(String value, String code) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new AuthenticationException("Authentication is required", code);
+        }
     }
 
     private static AuthenticationException invalidCredentials() {

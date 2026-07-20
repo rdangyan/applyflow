@@ -11,5 +11,7 @@ applyflow:
   auth:
     jwt-secret: test-only-secret-that-is-at-least-32-bytes
     access-token-minutes: 15
-    refresh-token-days: 30
+    refresh-inactivity-days: 30
+    refresh-absolute-days: 90
     refresh-cookie-secure: false
+    public-origin:

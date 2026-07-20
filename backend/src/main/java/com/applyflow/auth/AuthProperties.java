@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AuthProperties(
         String jwtSecret,
         long accessTokenMinutes,
-        long refreshTokenDays,
-        boolean refreshCookieSecure
+        long refreshInactivityDays,
+        long refreshAbsoluteDays,
+        boolean refreshCookieSecure,
+        String publicOrigin
 ) {}

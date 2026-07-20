@@ -7,13 +7,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
+import java.util.UUID;
 
 import static com.applyflow.auth.AuthDtos.*;
 
@@ -42,11 +45,11 @@ class AuthController {
     }
 
     @PostMapping("/refresh")
-    AuthResponse refresh(@CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken) {
+    ResponseEntity<AuthResponse> refresh(@CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new AuthenticationException("Authentication is required", "INVALID_SESSION");
         }
-        return authService.refresh(refreshToken);
+        return withRefreshCookie(authService.refresh(refreshToken));
     }
 
     @GetMapping("/me")
@@ -61,8 +64,31 @@ class AuthController {
         return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cleared.toString()).build();
     }
 
+    @GetMapping("/sessions")
+    DeviceSessionsResponse sessions(@AuthenticationPrincipal Jwt jwt) {
+        return authService.sessions(jwt.getSubject(), jwt.getClaimAsString("sid"));
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    ResponseEntity<Void> revokeSession(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        authService.revokeSession(jwt.getSubject(), sessionId);
+        ResponseEntity.HeadersBuilder<?> response = ResponseEntity.noContent();
+        if (sessionId.toString().equals(jwt.getClaimAsString("sid"))) {
+            response.header(HttpHeaders.SET_COOKIE, cookie("", Duration.ZERO).toString());
+        }
+        return response.build();
+    }
+
+    @PostMapping("/logout-all")
+    ResponseEntity<Void> logoutEverywhere(@AuthenticationPrincipal Jwt jwt) {
+        authService.logoutEverywhere(jwt.getSubject());
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, cookie("", Duration.ZERO).toString())
+                .build();
+    }
+
     private ResponseEntity<AuthResponse> withRefreshCookie(IssuedAuthentication issued) {
-        ResponseCookie cookie = cookie(issued.refreshToken(), Duration.ofDays(properties.refreshTokenDays()));
+        ResponseCookie cookie = cookie(issued.refreshToken(), Duration.ofDays(properties.refreshInactivityDays()));
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie.toString()).body(issued.response());
     }
 

@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import {
   Alert,
@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   CircularProgress,
+  Chip,
   Container,
   Link as MuiLink,
   Paper,
@@ -16,6 +17,7 @@ import {
 } from '@mui/material'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { problemMessage, useAuth } from './auth/AuthContext'
+import type { DeviceSession } from './generated'
 
 export default function App() {
   return (
@@ -70,10 +72,23 @@ function Landing() {
 }
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { state } = useAuth()
+  const { state, validateSession } = useAuth()
   const location = useLocation()
+  const [validating, setValidating] = useState(true)
+
+  useEffect(() => {
+    if (state.kind !== 'authenticated') {
+      return
+    }
+    let active = true
+    setValidating(true)
+    void validateSession().finally(() => { if (active) setValidating(false) })
+    return () => { active = false }
+  }, [state.kind, validateSession])
+
   if (state.kind === 'restoring') return <CenteredProgress label="Restoring your workspace…" />
   if (state.kind === 'anonymous') return <Navigate to="/sign-in" state={{ from: location.pathname }} replace />
+  if (validating) return <CenteredProgress label="Verifying your session…" />
   return children
 }
 
@@ -88,9 +103,88 @@ function Workspace() {
           <Typography color="text.secondary">Signed in as</Typography>
           <Typography sx={{ fontWeight: 700 }}>{state.user.email}</Typography>
           <Alert severity="info">Your identity is isolated and ready. Application tracking arrives in a later issue.</Alert>
+          <SessionManager />
         </Stack>
       </Paper>
     </Container>
+  )
+}
+
+function SessionManager() {
+  const { listSessions, revokeSession, logoutEverywhere } = useAuth()
+  const [sessions, setSessions] = useState<DeviceSession[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState('')
+
+  useEffect(() => {
+    let active = true
+    listSessions()
+      .then((items) => { if (active) setSessions(items) })
+      .catch((failure) => { if (active) setError(problemMessage(failure, 'Could not load your sessions.')) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [listSessions])
+
+  async function revoke(session: DeviceSession) {
+    setBusyId(session.id)
+    setError('')
+    try {
+      await revokeSession(session)
+      setSessions((items) => items.filter((item) => item.id !== session.id))
+    } catch (failure) {
+      setError(problemMessage(failure, 'Could not revoke that session.'))
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  async function revokeAll() {
+    setBusyId('all')
+    setError('')
+    try {
+      await logoutEverywhere()
+    } catch (failure) {
+      setError(problemMessage(failure, 'Could not sign out everywhere.'))
+      setBusyId('')
+    }
+  }
+
+  return (
+    <Box sx={{ pt: 2 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={2}>
+        <Box>
+          <Typography component="h2" variant="h6">Device sessions</Typography>
+          <Typography variant="body2" color="text.secondary">Each browser stays signed in independently for up to 30 inactive days.</Typography>
+        </Box>
+        <Button color="error" variant="outlined" disabled={loading || busyId !== ''} onClick={() => void revokeAll()}>
+          Sign out everywhere
+        </Button>
+      </Stack>
+      {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+      {loading ? <CircularProgress size={24} aria-label="Loading sessions" sx={{ mt: 3 }} /> : (
+        <Stack spacing={1.5} sx={{ mt: 3 }}>
+          {sessions.map((session) => (
+            <Paper key={session.id} variant="outlined" sx={{ p: 2 }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={2}>
+                <Box>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography sx={{ fontWeight: 700 }}>{session.current ? 'This device' : 'Signed-in device'}</Typography>
+                    {session.current && <Chip size="small" color="primary" label="Current" />}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    Last used {new Date(session.lastUsedAt).toLocaleString()} · expires {new Date(session.expiresAt).toLocaleString()}
+                  </Typography>
+                </Box>
+                <Button color="error" disabled={busyId !== ''} onClick={() => void revoke(session)}>
+                  {busyId === session.id ? 'Revoking…' : 'Revoke'}
+                </Button>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
+      )}
+    </Box>
   )
 }
 

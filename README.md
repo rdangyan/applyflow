@@ -75,6 +75,9 @@ Open <http://localhost:8080>. Database data is retained in the `applyflow-postgr
 - Reload restoration: `POST /api/v1/auth/refresh`
 - Current user: `GET /api/v1/auth/me`
 - Sign-out: `POST /api/v1/auth/logout`
+- Active device sessions: `GET /api/v1/auth/sessions`
+- Revoke one device: `DELETE /api/v1/auth/sessions/{sessionId}`
+- Sign out everywhere: `POST /api/v1/auth/logout-all`
 - OpenAPI JSON: <http://localhost:8080/api-docs>
 - Swagger UI: <http://localhost:8080/swagger-ui.html>
 - Liveness: <http://localhost:8080/actuator/health/liveness>
@@ -108,6 +111,7 @@ The application reads environment variables and defaults to the local Compose da
 | `DATABASE_PASSWORD` | `applyflow` |
 | `JWT_SECRET` | local development secret; set a strong secret in hosted environments |
 | `REFRESH_COOKIE_SECURE` | `false`; set to `true` for HTTPS deployments |
+| `PUBLIC_ORIGIN` | empty; set to the deployed HTTPS origin (for example, `https://applyflow.example`) |
 | `VITE_API_BASE_URL` | empty (same origin) |
 
 Do not commit production credentials. The local defaults are for development only.

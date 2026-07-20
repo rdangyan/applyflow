@@ -23,8 +23,11 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(AuthenticationException.class)
     ProblemDetail handleAuthentication(AuthenticationException exception, HttpServletRequest request) {
-        HttpStatus status = "EMAIL_ALREADY_REGISTERED".equals(exception.getCode())
-                ? HttpStatus.CONFLICT : HttpStatus.UNAUTHORIZED;
+        HttpStatus status = switch (exception.getCode()) {
+            case "EMAIL_ALREADY_REGISTERED" -> HttpStatus.CONFLICT;
+            case "INVALID_ORIGIN" -> HttpStatus.FORBIDDEN;
+            default -> HttpStatus.UNAUTHORIZED;
+        };
         return problem(status, exception.getMessage(), exception.getCode(), request);
     }
 

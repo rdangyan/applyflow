@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 final class AuthDtos {
@@ -32,4 +33,14 @@ final class AuthDtos {
 
     record AuthResponse(String accessToken, long expiresIn, CurrentUser user) {}
     record IssuedAuthentication(AuthResponse response, String refreshToken) {}
+
+    record DeviceSession(
+            UUID id,
+            Instant createdAt,
+            Instant lastUsedAt,
+            Instant expiresAt,
+            boolean current
+    ) {}
+
+    record DeviceSessionsResponse(List<DeviceSession> sessions) {}
 }
