@@ -1,11 +1,13 @@
 package com.applyflow.auth;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -14,6 +16,7 @@ import static com.applyflow.auth.AuthDtos.*;
 
 @Service
 class AuthService {
+    private static final String DEFAULT_TIME_ZONE = "UTC";
     private final UserAccountRepository users;
     private final RefreshSessionService sessions;
     private final PasswordEncoder passwordEncoder;
@@ -38,8 +41,10 @@ class AuthService {
         if (users.existsByNormalizedEmail(normalized)) {
             throw new AuthenticationException("An account with this email already exists", "EMAIL_ALREADY_REGISTERED");
         }
+        String timeZone = request.timeZone() == null || request.timeZone().isBlank()
+                ? DEFAULT_TIME_ZONE : validTimeZone(request.timeZone());
         UserAccount user = new UserAccount(UUID.randomUUID(), email, normalized,
-                passwordEncoder.encode(request.password()), clock.instant());
+                passwordEncoder.encode(request.password()), clock.instant(), timeZone);
         try {
             users.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
@@ -82,6 +87,22 @@ class AuthService {
     }
 
     @Transactional
+    CurrentUser updateProfile(String subject, UpdateProfileRequest request) {
+        UUID id = parseUuid(subject, "INVALID_ACCESS_TOKEN");
+        String timeZone = validTimeZone(request.timeZone());
+        UserAccount user = users.findById(id)
+                .orElseThrow(() -> new AuthenticationException("Authentication is required", "INVALID_ACCESS_TOKEN"));
+        if (user.getVersion() != request.version()) throw ProfileException.staleVersion();
+        user.changeTimeZone(timeZone);
+        try {
+            users.saveAndFlush(user);
+        } catch (ObjectOptimisticLockingFailureException exception) {
+            throw ProfileException.staleVersion();
+        }
+        return CurrentUser.from(user);
+    }
+
+    @Transactional
     void logout(String refreshToken) {
         sessions.logout(refreshToken);
     }
@@ -107,7 +128,8 @@ class AuthService {
     }
 
     private IssuedAuthentication authentication(RefreshSessionService.SessionToken session) {
-        CurrentUser user = new CurrentUser(session.userId(), session.email(), session.userCreatedAt());
+        CurrentUser user = users.findById(session.userId()).map(CurrentUser::from)
+                .orElseThrow(() -> new AuthenticationException("Authentication is required", "INVALID_SESSION"));
         AuthResponse response = new AuthResponse(
                 tokens.accessToken(session.userId(), session.email(), session.familyId(), session.issuedAt()),
                 properties.accessTokenMinutes() * 60,
@@ -117,6 +139,12 @@ class AuthService {
 
     private static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String validTimeZone(String value) {
+        String candidate = value == null ? "" : value.trim();
+        if (!ZoneId.getAvailableZoneIds().contains(candidate)) throw ProfileException.invalidTimeZone();
+        return candidate;
     }
 
     private static UUID parseUuid(String value, String code) {

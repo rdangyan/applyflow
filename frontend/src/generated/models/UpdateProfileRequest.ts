@@ -2,10 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type CurrentUser = {
-    id: string;
-    email: string;
-    createdAt: string;
+export type UpdateProfileRequest = {
     timeZone: string;
     version: number;
 };

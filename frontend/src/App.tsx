@@ -18,6 +18,7 @@ import {
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { problemMessage, useAuth } from './auth/AuthContext'
 import type { DeviceSession } from './generated'
+import { browserTimeZone, formatDateTime, validTimeZone } from './dateTime'
 
 export default function App() {
   return (
@@ -102,7 +103,7 @@ function Workspace() {
           <Typography component="h1" variant="h4">Your private workspace</Typography>
           <Typography color="text.secondary">Signed in as</Typography>
           <Typography sx={{ fontWeight: 700 }}>{state.user.email}</Typography>
-          <Alert severity="info">Your identity is isolated and ready. Application tracking arrives in a later issue.</Alert>
+          <ProfileEditor />
           <SessionManager />
         </Stack>
       </Paper>
@@ -111,7 +112,7 @@ function Workspace() {
 }
 
 function SessionManager() {
-  const { listSessions, revokeSession, logoutEverywhere } = useAuth()
+  const { state, listSessions, revokeSession, logoutEverywhere } = useAuth()
   const [sessions, setSessions] = useState<DeviceSession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -173,7 +174,8 @@ function SessionManager() {
                     {session.current && <Chip size="small" color="primary" label="Current" />}
                   </Stack>
                   <Typography variant="body2" color="text.secondary">
-                    Last used {new Date(session.lastUsedAt).toLocaleString()} · expires {new Date(session.expiresAt).toLocaleString()}
+                    Last used {state.kind === 'authenticated' ? formatDateTime(session.lastUsedAt, state.user.timeZone) : ''}
+                    {' · '}expires {state.kind === 'authenticated' ? formatDateTime(session.expiresAt, state.user.timeZone) : ''}
                   </Typography>
                 </Box>
                 <Button color="error" disabled={busyId !== ''} onClick={() => void revoke(session)}>
@@ -188,12 +190,72 @@ function SessionManager() {
   )
 }
 
+function ProfileEditor() {
+  const { state, updateProfile } = useAuth()
+  const user = state.kind === 'authenticated' ? state.user : null
+  const [timeZone, setTimeZone] = useState(user?.timeZone ?? 'UTC')
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (user) setTimeZone(user.timeZone)
+  }, [user])
+
+  if (!user) return null
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    if (!user) return
+    setMessage('')
+    setError('')
+    if (!validTimeZone(timeZone)) {
+      setError('Enter a supported IANA time zone, such as America/Vancouver.')
+      return
+    }
+    setSaving(true)
+    try {
+      await updateProfile({ timeZone, version: user.version })
+      setMessage('Time zone saved.')
+    } catch (failure) {
+      setError(problemMessage(failure, 'Could not save your time zone. Reload and try again.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Box component="form" onSubmit={(event) => void save(event)} sx={{ pt: 2 }}>
+      <Typography component="h2" variant="h6">Profile</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Times are displayed in this IANA time zone on every device.
+      </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'flex-start' }}>
+        <TextField
+          label="Time zone"
+          value={timeZone}
+          onChange={(event) => setTimeZone(event.target.value)}
+          error={Boolean(error)}
+          helperText={error || `Browser suggestion: ${browserTimeZone() ?? 'unavailable'}`}
+          fullWidth
+          inputProps={{ autoComplete: 'off' }}
+        />
+        <Button type="submit" variant="contained" disabled={saving} sx={{ minWidth: 120, mt: { sm: 1 } }}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      </Stack>
+      {message && <Alert severity="success" sx={{ mt: 2 }}>{message}</Alert>}
+    </Box>
+  )
+}
+
 function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { state, login, register } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [timeZone, setTimeZone] = useState(() => browserTimeZone() ?? 'UTC')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const registering = mode === 'register'
@@ -206,7 +268,7 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     setError('')
     setSubmitting(true)
     try {
-      if (registering) await register({ email, password })
+      if (registering) await register({ email, password, timeZone })
       else await login({ email, password })
       const destination = (location.state as { from?: string } | null)?.from ?? '/app'
       navigate(destination, { replace: true })
@@ -229,6 +291,15 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           {error && <Alert severity="error">{error}</Alert>}
           <TextField label="Email address" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
           <TextField label="Password" type="password" autoComplete={registering ? 'new-password' : 'current-password'} required inputProps={registering ? { minLength: 12, maxLength: 128 } : { maxLength: 128 }} value={password} onChange={(event) => setPassword(event.target.value)} />
+          {registering && (
+            <TextField
+              label="Time zone"
+              value={timeZone}
+              onChange={(event) => setTimeZone(event.target.value)}
+              required
+              helperText="Suggested from this browser; you can change it now or from your profile."
+            />
+          )}
           <Button type="submit" variant="contained" size="large" disabled={submitting}>
             {submitting ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}
           </Button>

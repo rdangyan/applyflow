@@ -5,5 +5,9 @@
 export type RegisterRequest = {
     email: string;
     password: string;
+    /**
+     * Optional browser-suggested IANA zone; defaults to UTC when omitted
+     */
+    timeZone?: string;
 };
 

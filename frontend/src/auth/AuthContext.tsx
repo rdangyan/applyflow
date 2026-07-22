@@ -10,6 +10,7 @@ import {
   type LoginRequest,
   type ProblemDetail,
   type RegisterRequest,
+  type UpdateProfileRequest,
 } from '../generated'
 
 type AuthState =
@@ -26,6 +27,7 @@ type AuthContextValue = {
   revokeSession: (session: DeviceSession) => Promise<void>
   logoutEverywhere: () => Promise<void>
   validateSession: () => Promise<boolean>
+  updateProfile: (request: UpdateProfileRequest) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -153,6 +155,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [becomeAnonymous])
 
+  const updateProfile = useCallback(async (request: UpdateProfileRequest) => {
+    const response = await AuthenticationService.updateProfile({ requestBody: request })
+    if (!('id' in response)) throw new Error(response.detail)
+    setState({ kind: 'authenticated', user: response })
+  }, [])
+
   const logoutEverywhere = useCallback(async () => {
     try {
       await AuthenticationService.logoutEverywhere()
@@ -162,8 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [becomeAnonymous])
 
   const value = useMemo(
-    () => ({ state, login, register, logout, listSessions, revokeSession, logoutEverywhere, validateSession }),
-    [state, login, register, logout, listSessions, revokeSession, logoutEverywhere, validateSession],
+    () => ({ state, login, register, logout, listSessions, revokeSession, logoutEverywhere, validateSession, updateProfile }),
+    [state, login, register, logout, listSessions, revokeSession, logoutEverywhere, validateSession, updateProfile],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

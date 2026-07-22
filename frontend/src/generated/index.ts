@@ -15,6 +15,7 @@ export type { LoginRequest } from './models/LoginRequest';
 export type { ProblemDetail } from './models/ProblemDetail';
 export type { RegisterRequest } from './models/RegisterRequest';
 export type { SystemStatus } from './models/SystemStatus';
+export type { UpdateProfileRequest } from './models/UpdateProfileRequest';
 
 export { AuthenticationService } from './services/AuthenticationService';
 export { SystemService } from './services/SystemService';

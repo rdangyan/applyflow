@@ -18,11 +18,18 @@ vi.mock('./generated', () => ({
     revokeSession: vi.fn(),
     logoutEverywhere: vi.fn(),
     getCurrentUser: vi.fn(),
+    updateProfile: vi.fn(),
   },
   OpenAPI: {},
 }))
 
-const user = { id: '03d5c2ae-7267-4b45-b0d0-871db00767e4', email: 'person@example.com', createdAt: '2026-07-16T00:00:00Z' }
+const user = {
+  id: '03d5c2ae-7267-4b45-b0d0-871db00767e4',
+  email: 'person@example.com',
+  createdAt: '2026-07-16T00:00:00Z',
+  timeZone: 'America/Vancouver',
+  version: 0,
+}
 const authentication = { accessToken: 'access-token', expiresIn: 900, user }
 const currentSession = {
   id: '491aed7d-0b01-4ec9-a557-38e64c7dbd3d',
@@ -65,6 +72,7 @@ describe('identity workflow', () => {
     vi.mocked(AuthenticationService.refresh).mockRejectedValue(new Error('no session'))
     vi.mocked(AuthenticationService.logout).mockResolvedValue(undefined as never)
     vi.mocked(AuthenticationService.getCurrentUser).mockResolvedValue(user)
+    vi.mocked(AuthenticationService.updateProfile).mockResolvedValue({ ...user, timeZone: 'Asia/Tokyo', version: 1 })
     vi.mocked(AuthenticationService.listSessions).mockResolvedValue({ sessions: [currentSession, otherSession] })
     vi.mocked(AuthenticationService.revokeSession).mockResolvedValue(undefined as never)
     vi.mocked(AuthenticationService.logoutEverywhere).mockResolvedValue(undefined as never)
@@ -175,5 +183,28 @@ describe('identity workflow', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/sign-in'))
     expect(AuthenticationService.logoutEverywhere).toHaveBeenCalledOnce()
     expect(OpenAPI.TOKEN).toBeUndefined()
+  })
+
+  it('shows the browser suggestion during registration', async () => {
+    renderApp('/register')
+
+    expect(await screen.findByLabelText(/^Time zone/)).toHaveValue(Intl.DateTimeFormat().resolvedOptions().timeZone)
+    expect(screen.getByText(/Suggested from this browser/)).toBeVisible()
+  })
+
+  it('updates the persisted profile zone and rerenders shared timestamps', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    renderApp('/app')
+    const field = await screen.findByLabelText(/^Time zone/)
+    const before = (await screen.findAllByText(/Last used/))[0].textContent
+
+    fireEvent.change(field, { target: { value: 'Asia/Tokyo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(AuthenticationService.updateProfile).toHaveBeenCalledWith({
+      requestBody: { timeZone: 'Asia/Tokyo', version: 0 },
+    }))
+    expect(await screen.findByText('Time zone saved.')).toBeVisible()
+    expect(screen.getAllByText(/Last used/)[0].textContent).not.toBe(before)
   })
 })

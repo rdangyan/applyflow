@@ -8,6 +8,7 @@ import type { DeviceSessionsResponse } from '../models/DeviceSessionsResponse';
 import type { LoginRequest } from '../models/LoginRequest';
 import type { ProblemDetail } from '../models/ProblemDetail';
 import type { RegisterRequest } from '../models/RegisterRequest';
+import type { UpdateProfileRequest } from '../models/UpdateProfileRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -81,6 +82,25 @@ export class AuthenticationService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/auth/me',
+        });
+    }
+    /**
+     * Update the current user's profile preferences
+     * Uses optimistic versioning; a stale version returns 409 Conflict.
+     * @returns CurrentUser Updated private user context
+     * @returns ProblemDetail An RFC 9457 API problem
+     * @throws ApiError
+     */
+    public static updateProfile({
+        requestBody,
+    }: {
+        requestBody: UpdateProfileRequest,
+    }): CancelablePromise<CurrentUser | ProblemDetail> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/auth/me',
+            body: requestBody,
+            mediaType: 'application/json',
         });
     }
     /**

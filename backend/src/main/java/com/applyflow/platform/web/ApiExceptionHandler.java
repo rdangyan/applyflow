@@ -1,6 +1,7 @@
 package com.applyflow.platform.web;
 
 import com.applyflow.auth.AuthenticationException;
+import com.applyflow.auth.ProfileException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,15 @@ public class ApiExceptionHandler {
         exception.getBindingResult().getFieldErrors().forEach(error ->
                 fieldErrors.putIfAbsent(error.getField(), error.getDefaultMessage()));
         problem.setProperty("fieldErrors", fieldErrors);
+        return problem;
+    }
+
+    @ExceptionHandler(ProfileException.class)
+    ProblemDetail handleProfile(ProfileException exception, HttpServletRequest request) {
+        HttpStatus status = "PROFILE_VERSION_CONFLICT".equals(exception.getCode())
+                ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+        ProblemDetail problem = problem(status, exception.getMessage(), exception.getCode(), request);
+        if (!exception.getFieldErrors().isEmpty()) problem.setProperty("fieldErrors", exception.getFieldErrors());
         return problem;
     }
 

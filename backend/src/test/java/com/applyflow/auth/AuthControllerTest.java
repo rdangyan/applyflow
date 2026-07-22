@@ -233,7 +233,7 @@ class AuthControllerTest {
 
     private MvcResult register(String email, String password) throws Exception {
         return mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AuthDtos.RegisterRequest(email, password))))
+                        .content(objectMapper.writeValueAsString(new AuthDtos.RegisterRequest(email, password, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.expiresIn").value(900))
                 .andReturn();
