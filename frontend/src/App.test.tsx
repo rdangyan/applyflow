@@ -5,10 +5,16 @@ import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { AuthProvider } from './auth/AuthContext'
-import { AuthenticationService, OpenAPI } from './generated'
+import { ApiError, AuthenticationService, CompaniesService, OpenAPI } from './generated'
 
 vi.mock('./generated', () => ({
-  ApiError: class ApiError extends Error {},
+  ApiError: class ApiError extends Error {
+    status: number
+    body: unknown
+    constructor(_request: unknown, response: { status: number, body: unknown }, message = 'API error') {
+      super(message); this.status = response.status; this.body = response.body
+    }
+  },
   AuthenticationService: {
     refresh: vi.fn(),
     login: vi.fn(),
@@ -19,6 +25,13 @@ vi.mock('./generated', () => ({
     logoutEverywhere: vi.fn(),
     getCurrentUser: vi.fn(),
     updateProfile: vi.fn(),
+  },
+  CompaniesService: {
+    listCompanies: vi.fn(),
+    createCompany: vi.fn(),
+    updateCompany: vi.fn(),
+    archiveCompany: vi.fn(),
+    restoreCompany: vi.fn(),
   },
   OpenAPI: {},
 }))
@@ -39,6 +52,18 @@ const currentSession = {
   current: true,
 }
 const otherSession = { ...currentSession, id: '8cff945e-1db3-49f7-b1b4-703fcfe54cdd', current: false }
+const company = {
+  id: 'ef25b842-c06d-4a79-8dc4-902ee45e9f6c',
+  name: 'Acme Labs',
+  website: 'https://acme.example',
+  industry: 'Software',
+  location: 'Vancouver',
+  notes: 'Growing team',
+  archived: false,
+  createdAt: '2026-07-22T00:00:00Z',
+  updatedAt: '2026-07-22T00:00:00Z',
+  version: 0,
+}
 
 function renderApp(path: string) {
   window.history.pushState({}, '', path)
@@ -76,6 +101,11 @@ describe('identity workflow', () => {
     vi.mocked(AuthenticationService.listSessions).mockResolvedValue({ sessions: [currentSession, otherSession] })
     vi.mocked(AuthenticationService.revokeSession).mockResolvedValue(undefined as never)
     vi.mocked(AuthenticationService.logoutEverywhere).mockResolvedValue(undefined as never)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [] })
+    vi.mocked(CompaniesService.createCompany).mockResolvedValue(company)
+    vi.mocked(CompaniesService.updateCompany).mockResolvedValue({ ...company, version: 1 })
+    vi.mocked(CompaniesService.archiveCompany).mockResolvedValue({ ...company, archived: true, version: 1 })
+    vi.mocked(CompaniesService.restoreCompany).mockResolvedValue({ ...company, archived: false, version: 2 })
   })
 
   it('redirects an anonymous visitor away from the protected workspace', async () => {
@@ -206,5 +236,53 @@ describe('identity workflow', () => {
     }))
     expect(await screen.findByText('Time zone saved.')).toBeVisible()
     expect(screen.getAllByText(/Last used/)[0].textContent).not.toBe(before)
+  })
+
+  it('shows the empty company view and creates a name-only company', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    renderApp('/app')
+
+    expect(await screen.findByText('No companies yet')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Add company' }))
+    fireEvent.change(screen.getByLabelText(/Company name/), { target: { value: '  Acme   Labs  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save company' }))
+
+    await waitFor(() => expect(CompaniesService.createCompany).toHaveBeenCalledWith({
+      requestBody: { name: 'Acme Labs', website: '', industry: '', location: '', notes: '' },
+    }))
+    expect(await screen.findByRole('heading', { name: 'Acme Labs' })).toBeVisible()
+  })
+
+  it('archives a company and exposes the archived restore view', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies)
+      .mockResolvedValueOnce({ companies: [company] })
+      .mockResolvedValueOnce({ companies: [{ ...company, archived: true, archivedAt: '2026-07-22T01:00:00Z', version: 1 }] })
+    renderApp('/app')
+
+    expect(await screen.findByRole('heading', { name: 'Acme Labs' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(CompaniesService.archiveCompany).toHaveBeenCalledWith({ companyId: company.id, requestBody: { version: 0 } }))
+    expect(await screen.findByText('No companies yet')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Archived' }))
+    expect(await screen.findByRole('button', { name: 'Restore' })).toBeVisible()
+  })
+
+  it('keeps a normalized duplicate conflict attached to the company name field', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.createCompany).mockRejectedValue(new ApiError(
+      { method: 'POST', url: '/api/v1/companies' },
+      { url: '/api/v1/companies', ok: false, status: 409, statusText: 'Conflict', body: { code: 'COMPANY_NAME_CONFLICT' } },
+      'Conflict',
+    ))
+    renderApp('/app')
+    await screen.findByText('No companies yet')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add company' }))
+    fireEvent.change(screen.getByLabelText(/Company name/), { target: { value: 'ACME LABS' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save company' }))
+
+    expect(await screen.findByText('A company with this name already exists in your workspace.')).toBeVisible()
   })
 })

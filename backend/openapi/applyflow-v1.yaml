@@ -4,6 +4,124 @@ info:
   version: v1
   description: The versioned API for the ApplyFlow portfolio application.
 paths:
+  /api/v1/companies:
+    get:
+      operationId: listCompanies
+      tags: [Companies]
+      summary: List active or archived companies owned by the current user
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: archived
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Owner-scoped companies ordered by normalized name
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createCompany
+      tags: [Companies]
+      summary: Create a private company
+      description: Names are trimmed, whitespace-normalized, case-folded, and unique within the current user's workspace.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCompanyRequest' }
+      responses:
+        '201':
+          description: Company created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/companies/{companyId}:
+    parameters:
+      - name: companyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCompany
+      tags: [Companies]
+      summary: Get an owned active or archived company
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Company details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      operationId: updateCompany
+      tags: [Companies]
+      summary: Update an owned company
+      description: The last-read version is required; stale writes return 409 Conflict.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCompanyRequest' }
+      responses:
+        '200':
+          description: Company updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/companies/{companyId}/archive:
+    post:
+      operationId: archiveCompany
+      tags: [Companies]
+      summary: Archive an owned active company
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanyVersionRequest' }
+      responses:
+        '200':
+          description: Company archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/companies/{companyId}/restore:
+    post:
+      operationId: restoreCompany
+      tags: [Companies]
+      summary: Restore an owned archived company
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanyVersionRequest' }
+      responses:
+        '200':
+          description: Company restored
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        default: { $ref: '#/components/responses/Problem' }
   /api/v1/auth/register:
     post:
       operationId: register
@@ -171,6 +289,49 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetail' }
   schemas:
+    CreateCompanyRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        website: { type: string, maxLength: 2048, nullable: true }
+        industry: { type: string, maxLength: 200, nullable: true }
+        location: { type: string, maxLength: 200, nullable: true }
+        notes: { type: string, maxLength: 10000, nullable: true }
+    UpdateCompanyRequest:
+      allOf:
+        - { $ref: '#/components/schemas/CreateCompanyRequest' }
+        - type: object
+          required: [version]
+          properties:
+            version: { type: integer, format: int64, minimum: 0 }
+    CompanyVersionRequest:
+      type: object
+      required: [version]
+      properties:
+        version: { type: integer, format: int64, minimum: 0 }
+    Company:
+      type: object
+      required: [id, name, archived, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        website: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        archived: { type: boolean }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    CompanyListResponse:
+      type: object
+      required: [companies]
+      properties:
+        companies:
+          type: array
+          items: { $ref: '#/components/schemas/Company' }
     RegisterRequest:
       type: object
       required: [email, password]

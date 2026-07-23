@@ -19,6 +19,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import { problemMessage, useAuth } from './auth/AuthContext'
 import type { DeviceSession } from './generated'
 import { browserTimeZone, formatDateTime, validTimeZone } from './dateTime'
+import CompanyWorkspace from './company/CompanyWorkspace'
 
 export default function App() {
   return (
@@ -97,12 +98,13 @@ function Workspace() {
   const { state } = useAuth()
   if (state.kind !== 'authenticated') return null
   return (
-    <Container component="main" maxWidth="md" sx={{ py: 8 }}>
+    <Container component="main" maxWidth="lg" sx={{ py: { xs: 4, md: 8 } }}>
       <Paper variant="outlined" sx={{ p: { xs: 3, md: 5 } }}>
         <Stack spacing={2}>
           <Typography component="h1" variant="h4">Your private workspace</Typography>
           <Typography color="text.secondary">Signed in as</Typography>
           <Typography sx={{ fontWeight: 700 }}>{state.user.email}</Typography>
+          <CompanyWorkspace />
           <ProfileEditor />
           <SessionManager />
         </Stack>
