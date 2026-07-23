@@ -5,9 +5,21 @@ import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { AuthProvider } from './auth/AuthContext'
-import { ApiError, AuthenticationService, CompaniesService, OpenAPI } from './generated'
+import { ApiError, Application, ApplicationsService, AuthenticationService, CompaniesService, OpenAPI } from './generated'
 
 vi.mock('./generated', () => ({
+  Application: { status: { SAVED: 'SAVED' } },
+  EmploymentType: {
+    FULL_TIME: 'FULL_TIME', PART_TIME: 'PART_TIME', CONTRACT: 'CONTRACT',
+    TEMPORARY: 'TEMPORARY', INTERNSHIP: 'INTERNSHIP', OTHER: 'OTHER',
+  },
+  WorkplaceArrangement: { REMOTE: 'REMOTE', HYBRID: 'HYBRID', ON_SITE: 'ON_SITE' },
+  PayPeriod: { HOURLY: 'HOURLY', MONTHLY: 'MONTHLY', YEARLY: 'YEARLY' },
+  SourceCategory: {
+    COMPANY_WEBSITE: 'COMPANY_WEBSITE', LINKEDIN: 'LINKEDIN', INDEED: 'INDEED',
+    REFERRAL: 'REFERRAL', RECRUITER: 'RECRUITER', OTHER_JOB_BOARD: 'OTHER_JOB_BOARD',
+    CAREER_FAIR: 'CAREER_FAIR', OTHER: 'OTHER',
+  },
   ApiError: class ApiError extends Error {
     status: number
     body: unknown
@@ -32,6 +44,9 @@ vi.mock('./generated', () => ({
     updateCompany: vi.fn(),
     archiveCompany: vi.fn(),
     restoreCompany: vi.fn(),
+  },
+  ApplicationsService: {
+    createApplication: vi.fn(),
   },
   OpenAPI: {},
 }))
@@ -62,6 +77,15 @@ const company = {
   archived: false,
   createdAt: '2026-07-22T00:00:00Z',
   updatedAt: '2026-07-22T00:00:00Z',
+  version: 0,
+}
+const application = {
+  id: '01e42f7a-6e72-4b9c-a62c-11cc1ca84218',
+  company: { id: company.id, name: company.name },
+  jobTitle: 'Senior Engineer',
+  status: Application.status.SAVED,
+  createdAt: '2026-07-23T00:00:00Z',
+  updatedAt: '2026-07-23T00:00:00Z',
   version: 0,
 }
 
@@ -106,6 +130,7 @@ describe('identity workflow', () => {
     vi.mocked(CompaniesService.updateCompany).mockResolvedValue({ ...company, version: 1 })
     vi.mocked(CompaniesService.archiveCompany).mockResolvedValue({ ...company, archived: true, version: 1 })
     vi.mocked(CompaniesService.restoreCompany).mockResolvedValue({ ...company, archived: false, version: 2 })
+    vi.mocked(ApplicationsService.createApplication).mockResolvedValue(application)
   })
 
   it('redirects an anonymous visitor away from the protected workspace', async () => {
@@ -255,9 +280,11 @@ describe('identity workflow', () => {
 
   it('archives a company and exposes the archived restore view', async () => {
     vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
-    vi.mocked(CompaniesService.listCompanies)
-      .mockResolvedValueOnce({ companies: [company] })
-      .mockResolvedValueOnce({ companies: [{ ...company, archived: true, archivedAt: '2026-07-22T01:00:00Z', version: 1 }] })
+    vi.mocked(CompaniesService.listCompanies).mockImplementation(({ archived } = {}) => Promise.resolve({
+      companies: archived
+        ? [{ ...company, archived: true, archivedAt: '2026-07-22T01:00:00Z', version: 1 }]
+        : [company],
+    }) as never)
     renderApp('/app')
 
     expect(await screen.findByRole('heading', { name: 'Acme Labs' })).toBeVisible()
@@ -284,5 +311,73 @@ describe('identity workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save company' }))
 
     expect(await screen.findByText('A company with this name already exists in your workspace.')).toBeVisible()
+  })
+
+  it('captures a Saved application with an existing active company and structured fields', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [company] })
+    renderApp('/app')
+
+    const companySelect = await screen.findByRole('combobox', { name: /Existing company/ })
+    await waitFor(() => expect(companySelect).toBeEnabled())
+    fireEvent.change(companySelect, { target: { value: company.id } })
+    fireEvent.change(screen.getByLabelText(/Job title/), { target: { value: '  Senior   Engineer ' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Employment type' }), { target: { value: 'FULL_TIME' } })
+    fireEvent.change(screen.getByLabelText('Salary minimum'), { target: { value: '120000.25' } })
+    fireEvent.change(screen.getByLabelText('Salary maximum'), { target: { value: '150000.50' } })
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'cad' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Pay period' }), { target: { value: 'YEARLY' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save application' }))
+
+    await waitFor(() => expect(ApplicationsService.createApplication).toHaveBeenCalledWith({
+      requestBody: expect.objectContaining({
+        companyId: company.id,
+        jobTitle: 'Senior Engineer',
+        employmentType: 'FULL_TIME',
+        salaryMin: 120000.25,
+        salaryMax: 150000.5,
+        salaryCurrency: 'CAD',
+        salaryPayPeriod: 'YEARLY',
+      }),
+    }))
+    expect(await screen.findByText('Saved Senior Engineer at Acme Labs.')).toBeVisible()
+  })
+
+  it('creates a company inline with the application payload', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [] })
+    vi.mocked(ApplicationsService.createApplication).mockResolvedValue({
+      ...application,
+      company: { id: '0f47efb1-2236-4f8c-a672-c83f62bedbf5', name: 'New Labs' },
+      jobTitle: 'Designer',
+    })
+    renderApp('/app')
+
+    fireEvent.click(await screen.findByLabelText('Create new inline'))
+    fireEvent.change(await screen.findByRole('textbox', { name: /New company name/ }), { target: { value: '  New   Labs ' } })
+    fireEvent.change(screen.getByLabelText(/Job title/), { target: { value: 'Designer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save application' }))
+
+    await waitFor(() => expect(ApplicationsService.createApplication).toHaveBeenCalledWith({
+      requestBody: expect.objectContaining({ companyName: 'New Labs', jobTitle: 'Designer' }),
+    }))
+    expect(await screen.findByText('Saved Designer at New Labs.')).toBeVisible()
+  })
+
+  it('rejects an invalid salary range before sending the application', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [company] })
+    renderApp('/app')
+
+    const companySelect = await screen.findByRole('combobox', { name: /Existing company/ })
+    await waitFor(() => expect(companySelect).toBeEnabled())
+    fireEvent.change(companySelect, { target: { value: company.id } })
+    fireEvent.change(screen.getByLabelText(/Job title/), { target: { value: 'Engineer' } })
+    fireEvent.change(screen.getByLabelText('Salary minimum'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Salary maximum'), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save application' }))
+
+    expect(await screen.findByText('Salary maximum must be at least the minimum.')).toBeVisible()
+    expect(ApplicationsService.createApplication).not.toHaveBeenCalled()
   })
 })

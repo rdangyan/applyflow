@@ -4,6 +4,27 @@ info:
   version: v1
   description: The versioned API for the ApplyFlow portfolio application.
 paths:
+  /api/v1/applications:
+    post:
+      operationId: createApplication
+      tags: [Applications]
+      summary: Quick-capture a Saved application
+      description: >
+        Creates an owner-scoped Saved application using exactly one active companyId or a companyName
+        that is created atomically as a name-only company.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateApplicationRequest' }
+      responses:
+        '201':
+          description: Saved application created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        default: { $ref: '#/components/responses/Problem' }
   /api/v1/companies:
     get:
       operationId: listCompanies
@@ -289,6 +310,95 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetail' }
   schemas:
+    CreateApplicationRequest:
+      type: object
+      required: [jobTitle]
+      description: Exactly one of companyId or companyName must be provided.
+      properties:
+        companyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: An active company owned by the authenticated user
+        companyName:
+          type: string
+          maxLength: 200
+          nullable: true
+          description: A unique name-only company to create in the same transaction
+        jobTitle: { type: string, minLength: 1, maxLength: 300 }
+        postingUrl: { type: string, maxLength: 2048, nullable: true }
+        location: { type: string, maxLength: 200, nullable: true }
+        description: { type: string, maxLength: 20000, nullable: true }
+        notes: { type: string, maxLength: 10000, nullable: true }
+        employmentType:
+          allOf: [{ $ref: '#/components/schemas/EmploymentType' }]
+          nullable: true
+        workplaceArrangement:
+          allOf: [{ $ref: '#/components/schemas/WorkplaceArrangement' }]
+          nullable: true
+        salaryMin: { type: number, minimum: 0, nullable: true }
+        salaryMax: { type: number, minimum: 0, nullable: true }
+        salaryCurrency:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+          nullable: true
+          description: ISO 4217 alphabetic currency code
+        salaryPayPeriod:
+          allOf: [{ $ref: '#/components/schemas/PayPeriod' }]
+          nullable: true
+        sourceCategory:
+          allOf: [{ $ref: '#/components/schemas/SourceCategory' }]
+          nullable: true
+        sourceDetail: { type: string, maxLength: 500, nullable: true }
+    Application:
+      type: object
+      required: [id, company, jobTitle, status, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        company: { $ref: '#/components/schemas/ApplicationCompany' }
+        jobTitle: { type: string }
+        status: { type: string, enum: [SAVED] }
+        postingUrl: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        employmentType:
+          allOf: [{ $ref: '#/components/schemas/EmploymentType' }]
+          nullable: true
+        workplaceArrangement:
+          allOf: [{ $ref: '#/components/schemas/WorkplaceArrangement' }]
+          nullable: true
+        salaryMin: { type: number, nullable: true }
+        salaryMax: { type: number, nullable: true }
+        salaryCurrency: { type: string, nullable: true }
+        salaryPayPeriod:
+          allOf: [{ $ref: '#/components/schemas/PayPeriod' }]
+          nullable: true
+        sourceCategory:
+          allOf: [{ $ref: '#/components/schemas/SourceCategory' }]
+          nullable: true
+        sourceDetail: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    ApplicationCompany:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    EmploymentType:
+      type: string
+      enum: [FULL_TIME, PART_TIME, CONTRACT, TEMPORARY, INTERNSHIP, OTHER]
+    WorkplaceArrangement:
+      type: string
+      enum: [REMOTE, HYBRID, ON_SITE]
+    PayPeriod:
+      type: string
+      enum: [HOURLY, MONTHLY, YEARLY]
+    SourceCategory:
+      type: string
+      enum: [COMPANY_WEBSITE, LINKEDIN, INDEED, REFERRAL, RECRUITER, OTHER_JOB_BOARD, CAREER_FAIR, OTHER]
     CreateCompanyRequest:
       type: object
       required: [name]

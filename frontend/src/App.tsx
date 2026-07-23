@@ -20,6 +20,7 @@ import { problemMessage, useAuth } from './auth/AuthContext'
 import type { DeviceSession } from './generated'
 import { browserTimeZone, formatDateTime, validTimeZone } from './dateTime'
 import CompanyWorkspace from './company/CompanyWorkspace'
+import ApplicationCapture from './application/ApplicationCapture'
 
 export default function App() {
   return (
@@ -104,6 +105,7 @@ function Workspace() {
           <Typography component="h1" variant="h4">Your private workspace</Typography>
           <Typography color="text.secondary">Signed in as</Typography>
           <Typography sx={{ fontWeight: 700 }}>{state.user.email}</Typography>
+          <ApplicationCapture />
           <CompanyWorkspace />
           <ProfileEditor />
           <SessionManager />

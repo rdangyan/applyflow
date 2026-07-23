@@ -36,6 +36,7 @@ class SecurityConfiguration {
                         .requestMatchers("/api/v1/system/status", "/api-docs/**", "/swagger-ui.html", "/swagger-ui/**", "/actuator/health/**", "/", "/index.html", "/assets/**").permitAll()
                         .requestMatchers("/api/v1/auth/me", "/api/v1/auth/sessions/**", "/api/v1/auth/logout-all").authenticated()
                         .requestMatchers("/api/v1/companies", "/api/v1/companies/**").authenticated()
+                        .requestMatchers("/api/v1/applications", "/api/v1/applications/**").authenticated()
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(oauth -> oauth
                         .authenticationEntryPoint(authenticationEntryPoint)

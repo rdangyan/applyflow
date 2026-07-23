@@ -8,6 +8,7 @@ import java.util.UUID;
 
 interface CompanyRepository extends JpaRepository<Company, UUID> {
     Optional<Company> findByIdAndOwnerId(UUID id, UUID ownerId);
+    Optional<Company> findByIdAndOwnerIdAndArchivedAtIsNull(UUID id, UUID ownerId);
     List<Company> findAllByOwnerIdAndArchivedAtIsNullOrderByNormalizedNameAsc(UUID ownerId);
     List<Company> findAllByOwnerIdAndArchivedAtIsNotNullOrderByNormalizedNameAsc(UUID ownerId);
     boolean existsByOwnerIdAndNormalizedName(UUID ownerId, String normalizedName);

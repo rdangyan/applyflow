@@ -2,6 +2,7 @@ package com.applyflow.platform.web;
 
 import com.applyflow.auth.AuthenticationException;
 import com.applyflow.auth.ProfileException;
+import com.applyflow.application.ApplicationException;
 import com.applyflow.company.CompanyException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -60,6 +61,13 @@ public class ApiExceptionHandler {
             default -> HttpStatus.BAD_REQUEST;
         };
         ProblemDetail problem = problem(status, exception.getMessage(), exception.getCode(), request);
+        if (!exception.getFieldErrors().isEmpty()) problem.setProperty("fieldErrors", exception.getFieldErrors());
+        return problem;
+    }
+
+    @ExceptionHandler(ApplicationException.class)
+    ProblemDetail handleApplication(ApplicationException exception, HttpServletRequest request) {
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, exception.getMessage(), exception.getCode(), request);
         if (!exception.getFieldErrors().isEmpty()) problem.setProperty("fieldErrors", exception.getFieldErrors());
         return problem;
     }
