@@ -64,6 +64,47 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Application' }
         default: { $ref: '#/components/responses/Problem' }
+  /api/v1/applications/{applicationId}/status-transitions:
+    parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listApplicationStatusHistory
+      tags: [Applications]
+      summary: List an owned application's immutable status history
+      description: Entries are returned chronologically. Other users' identifiers behave as unavailable resources.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Chronological status history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StatusHistoryEntry' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: transitionApplicationStatus
+      tags: [Applications]
+      summary: Explicitly transition an owned application to a different status
+      description: >
+        Atomically updates the application and appends an immutable history entry. The last-read version
+        is required; stale versions return 409 Conflict. Leaving Saved requires an application date.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatusTransitionRequest' }
+      responses:
+        '200':
+          description: Application after the recorded transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        default: { $ref: '#/components/responses/Problem' }
   /api/v1/companies:
     get:
       operationId: listCompanies
@@ -432,6 +473,26 @@ components:
           nullable: true
         sourceDetail: { type: string, maxLength: 500, nullable: true }
         version: { type: integer, format: int64, minimum: 0 }
+    StatusTransitionRequest:
+      type: object
+      required: [newStatus, version]
+      properties:
+        newStatus: { $ref: '#/components/schemas/ApplicationStatus' }
+        note:
+          type: string
+          maxLength: 2000
+          nullable: true
+        version: { type: integer, format: int64, minimum: 0 }
+    StatusHistoryEntry:
+      type: object
+      required: [id, applicationId, previousStatus, newStatus, changedAt]
+      properties:
+        id: { type: string, format: uuid }
+        applicationId: { type: string, format: uuid }
+        previousStatus: { $ref: '#/components/schemas/ApplicationStatus' }
+        newStatus: { $ref: '#/components/schemas/ApplicationStatus' }
+        changedAt: { type: string, format: date-time }
+        note: { type: string, nullable: true }
     Application:
       type: object
       required: [id, company, jobTitle, status, createdAt, updatedAt, version]
@@ -439,9 +500,7 @@ components:
         id: { type: string, format: uuid }
         company: { $ref: '#/components/schemas/ApplicationCompany' }
         jobTitle: { type: string }
-        status:
-          type: string
-          enum: [SAVED, APPLIED, SCREENING, INTERVIEWING, OFFER, ACCEPTED, REJECTED, WITHDRAWN]
+        status: { $ref: '#/components/schemas/ApplicationStatus' }
         applicationDate:
           type: string
           format: date
@@ -475,6 +534,9 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
+    ApplicationStatus:
+      type: string
+      enum: [SAVED, APPLIED, SCREENING, INTERVIEWING, OFFER, ACCEPTED, REJECTED, WITHDRAWN]
     EmploymentType:
       type: string
       enum: [FULL_TIME, PART_TIME, CONTRACT, TEMPORARY, INTERNSHIP, OTHER]

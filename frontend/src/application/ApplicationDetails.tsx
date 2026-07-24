@@ -16,6 +16,7 @@ import {
 import { Link, useParams } from 'react-router-dom'
 import {
   ApiError,
+  ApplicationStatus,
   ApplicationsService,
   CompaniesService,
   EmploymentType,
@@ -25,6 +26,7 @@ import {
   type Application,
   type Company,
   type ProblemDetail,
+  type StatusHistoryEntry,
   type UpdateApplicationRequest,
 } from '../generated'
 import { problemMessage, useAuth } from '../auth/AuthContext'
@@ -110,6 +112,7 @@ export default function ApplicationDetails() {
   const { state } = useAuth()
   const timeZone = state.kind === 'authenticated' ? state.user.timeZone : 'UTC'
   const [application, setApplication] = useState<Application | null>(null)
+  const [history, setHistory] = useState<StatusHistoryEntry[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [form, setForm] = useState<FormState>(emptyForm)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -118,19 +121,27 @@ export default function ApplicationDetails() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [conflict, setConflict] = useState(false)
+  const [newStatus, setNewStatus] = useState<ApplicationStatus | ''>('')
+  const [statusNote, setStatusNote] = useState('')
+  const [transitioning, setTransitioning] = useState(false)
+  const [statusError, setStatusError] = useState('')
+  const [statusConflict, setStatusConflict] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     setConflict(false)
     try {
-      const [applicationResponse, companyResponse] = await Promise.all([
+      const [applicationResponse, companyResponse, historyResponse] = await Promise.all([
         ApplicationsService.getApplication({ applicationId }),
         CompaniesService.listCompanies({ archived: false }),
+        ApplicationsService.listApplicationStatusHistory({ applicationId }),
       ])
       if (!isApplication(applicationResponse)) throw new Error(applicationResponse.detail)
+      if (!Array.isArray(historyResponse)) throw new Error(historyResponse.detail)
       setApplication(applicationResponse)
       setForm(formFrom(applicationResponse))
+      setHistory(historyResponse)
       if ('companies' in companyResponse) setCompanies(companyResponse.companies)
     } catch (failure) {
       setError(problemMessage(failure, 'Could not load this application.'))
@@ -219,6 +230,44 @@ export default function ApplicationDetails() {
     }
   }
 
+  async function moveStatus(event: FormEvent) {
+    event.preventDefault()
+    if (!application || !newStatus) {
+      setStatusError('Choose a status.')
+      return
+    }
+    setStatusError('')
+    setStatusConflict(false)
+    setTransitioning(true)
+    try {
+      const response = await ApplicationsService.transitionApplicationStatus({
+        applicationId,
+        requestBody: {
+          newStatus,
+          note: optional(statusNote),
+          version: application.version,
+        },
+      })
+      if (!isApplication(response)) throw new Error(response.detail)
+      const historyResponse = await ApplicationsService.listApplicationStatusHistory({ applicationId })
+      if (!Array.isArray(historyResponse)) throw new Error(historyResponse.detail)
+      setApplication(response)
+      setHistory(historyResponse)
+      setNewStatus('')
+      setStatusNote('')
+      setSuccess(`Status moved to ${label(response.status)}.`)
+    } catch (failure) {
+      const problem = apiProblem(failure)
+      if (problem?.code === 'APPLICATION_VERSION_CONFLICT' || (failure instanceof ApiError && failure.status === 409)) {
+        setStatusConflict(true)
+      } else {
+        setStatusError(problemMessage(failure, 'Could not change the application status.'))
+      }
+    } finally {
+      setTransitioning(false)
+    }
+  }
+
   if (loading) {
     return <Stack alignItems="center" spacing={2} sx={{ py: 12 }} role="status"><CircularProgress /><Typography>Loading application…</Typography></Stack>
   }
@@ -252,6 +301,78 @@ export default function ApplicationDetails() {
             Created {formatDateTime(application.createdAt, timeZone)} · Updated {formatDateTime(application.updatedAt, timeZone)} · Version {application.version}
           </Typography>
         </Stack>
+
+        <Box component="section" aria-labelledby="status-heading" sx={{ mt: 4 }}>
+          <Typography id="status-heading" component="h2" variant="h6">Status pipeline</Typography>
+          <Box component="form" onSubmit={(event) => void moveStatus(event)} noValidate sx={{ mt: 2 }}>
+            <Stack spacing={2}>
+              {statusError && <Alert severity="error">{statusError}</Alert>}
+              {statusConflict && (
+                <Alert
+                  severity="warning"
+                  action={<Button color="inherit" size="small" onClick={() => void load()}>Load latest</Button>}
+                >
+                  This application was updated elsewhere. Load the latest version before changing its status.
+                </Alert>
+              )}
+              {application.status === ApplicationStatus.SAVED && !application.applicationDate && (
+                <Alert severity="info">Add and save an application date before moving this application out of Saved.</Alert>
+              )}
+              <Grid container spacing={2} alignItems="flex-start">
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField
+                    select
+                    fullWidth
+                    required
+                    label="Move to status"
+                    SelectProps={{ native: true }}
+                    value={newStatus}
+                    onChange={(event) => {
+                      setNewStatus(event.target.value as ApplicationStatus)
+                      setStatusError('')
+                    }}
+                  >
+                    <option value="" />
+                    {Object.values(ApplicationStatus).map((status) => (
+                      <option key={status} value={status}>{label(status)}</option>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 8 }}>
+                  <TextField
+                    fullWidth
+                    label="Transition note (optional)"
+                    inputProps={{ maxLength: 2000 }}
+                    value={statusNote}
+                    onChange={(event) => setStatusNote(event.target.value)}
+                  />
+                </Grid>
+              </Grid>
+              <Button type="submit" variant="contained" disabled={transitioning} sx={{ alignSelf: { sm: 'flex-start' } }}>
+                {transitioning ? 'Changing status…' : 'Change status'}
+              </Button>
+            </Stack>
+          </Box>
+
+          <Typography component="h3" variant="subtitle1" sx={{ fontWeight: 700, mt: 4 }}>History</Typography>
+          {history.length === 0 ? (
+            <Typography color="text.secondary" sx={{ mt: 1 }}>No status changes yet.</Typography>
+          ) : (
+            <Stack component="ol" aria-label="Status history" spacing={2} sx={{ mt: 1.5, mb: 0, pl: 3 }}>
+              {history.map((entry) => (
+                <Box component="li" key={entry.id}>
+                  <Typography>
+                    {label(entry.previousStatus)} → {label(entry.newStatus)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {formatDateTime(entry.changedAt, timeZone)}
+                  </Typography>
+                  {entry.note && <Typography sx={{ mt: 0.5 }}>{entry.note}</Typography>}
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Box>
 
         <Box component="form" onSubmit={(event) => void submit(event)} noValidate sx={{ mt: 4 }}>
           <Stack spacing={3}>

@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { ApplicationCompany } from './ApplicationCompany';
+import type { ApplicationStatus } from './ApplicationStatus';
 import type { EmploymentType } from './EmploymentType';
 import type { PayPeriod } from './PayPeriod';
 import type { SourceCategory } from './SourceCategory';
@@ -11,7 +12,7 @@ export type Application = {
     id: string;
     company: ApplicationCompany;
     jobTitle: string;
-    status: Application.status;
+    status: ApplicationStatus;
     applicationDate?: string | null;
     postingUrl?: string | null;
     location?: string | null;
@@ -29,16 +30,4 @@ export type Application = {
     updatedAt: string;
     version: number;
 };
-export namespace Application {
-    export enum status {
-        SAVED = 'SAVED',
-        APPLIED = 'APPLIED',
-        SCREENING = 'SCREENING',
-        INTERVIEWING = 'INTERVIEWING',
-        OFFER = 'OFFER',
-        ACCEPTED = 'ACCEPTED',
-        REJECTED = 'REJECTED',
-        WITHDRAWN = 'WITHDRAWN',
-    }
-}
 

@@ -54,6 +54,26 @@ final class ApplicationDtos {
             @NotNull @PositiveOrZero Long version
     ) {}
 
+    record StatusTransitionRequest(
+            @NotNull ApplicationStatus newStatus,
+            @Size(max = 2000) String note,
+            @NotNull @PositiveOrZero Long version
+    ) {}
+
+    record StatusHistoryResponse(
+            UUID id,
+            UUID applicationId,
+            ApplicationStatus previousStatus,
+            ApplicationStatus newStatus,
+            Instant changedAt,
+            String note
+    ) {
+        static StatusHistoryResponse from(ApplicationStatusHistory history) {
+            return new StatusHistoryResponse(history.getId(), history.getApplicationId(),
+                    history.getPreviousStatus(), history.getNewStatus(), history.getChangedAt(), history.getNote());
+        }
+    }
+
     record ApplicationCompany(UUID id, String name) {
         static ApplicationCompany from(CompanyReference company) {
             return new ApplicationCompany(company.id(), company.name());

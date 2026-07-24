@@ -31,6 +31,11 @@ public class ApplicationException extends RuntimeException {
                 "APPLICATION_VERSION_CONFLICT", Map.of());
     }
 
+    static ApplicationException sameStatus() {
+        return new ApplicationException("The application is already in that status",
+                "APPLICATION_STATUS_UNCHANGED", Map.of("newStatus", "must differ from the current status"));
+    }
+
     public String getCode() { return code; }
     public Map<String, String> getFieldErrors() { return fieldErrors; }
 }

@@ -117,6 +117,11 @@ class JobApplication {
     Instant getUpdatedAt() { return updatedAt; }
     long getVersion() { return version; }
 
+    void transitionTo(ApplicationStatus newStatus, Instant now) {
+        this.status = newStatus;
+        this.updatedAt = now;
+    }
+
     void update(UUID companyId, String jobTitle, LocalDate applicationDate, String postingUrl, String location,
                 String description, String notes, EmploymentType employmentType,
                 WorkplaceArrangement workplaceArrangement, BigDecimal salaryMin, BigDecimal salaryMax,

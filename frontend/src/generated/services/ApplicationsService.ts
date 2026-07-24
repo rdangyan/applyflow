@@ -5,6 +5,8 @@
 import type { Application } from '../models/Application';
 import type { CreateApplicationRequest } from '../models/CreateApplicationRequest';
 import type { ProblemDetail } from '../models/ProblemDetail';
+import type { StatusHistoryEntry } from '../models/StatusHistoryEntry';
+import type { StatusTransitionRequest } from '../models/StatusTransitionRequest';
 import type { UpdateApplicationRequest } from '../models/UpdateApplicationRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -68,6 +70,51 @@ export class ApplicationsService {
         return __request(OpenAPI, {
             method: 'PUT',
             url: '/api/v1/applications/{applicationId}',
+            path: {
+                'applicationId': applicationId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+        });
+    }
+    /**
+     * List an owned application's immutable status history
+     * Entries are returned chronologically. Other users' identifiers behave as unavailable resources.
+     * @returns StatusHistoryEntry Chronological status history
+     * @returns ProblemDetail An RFC 9457 API problem
+     * @throws ApiError
+     */
+    public static listApplicationStatusHistory({
+        applicationId,
+    }: {
+        applicationId: string,
+    }): CancelablePromise<Array<StatusHistoryEntry> | ProblemDetail> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/applications/{applicationId}/status-transitions',
+            path: {
+                'applicationId': applicationId,
+            },
+        });
+    }
+    /**
+     * Explicitly transition an owned application to a different status
+     * Atomically updates the application and appends an immutable history entry. The last-read version is required; stale versions return 409 Conflict. Leaving Saved requires an application date.
+     *
+     * @returns Application Application after the recorded transition
+     * @returns ProblemDetail An RFC 9457 API problem
+     * @throws ApiError
+     */
+    public static transitionApplicationStatus({
+        applicationId,
+        requestBody,
+    }: {
+        applicationId: string,
+        requestBody: StatusTransitionRequest,
+    }): CancelablePromise<Application | ProblemDetail> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/applications/{applicationId}/status-transitions',
             path: {
                 'applicationId': applicationId,
             },

@@ -30,6 +30,7 @@ class ApplicationControllerTest {
 
     @AfterEach
     void cleanDatabase() {
+        jdbc.update("delete from application_status_history");
         jdbc.update("delete from job_application");
         jdbc.update("delete from company");
         jdbc.update("delete from refresh_session");
@@ -268,6 +269,168 @@ class ApplicationControllerTest {
                                 + "\",\"jobTitle\":\"Engineer\",\"version\":0}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.applicationDate").exists());
+    }
+
+    @Test
+    void everyDifferentStatusPairCanTransitionAndWritesExactlyOneHistoryEntry() throws Exception {
+        String access = register("application-status-pairs@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode application = createApplication(access, company.get("id").asText(), "Engineer");
+        java.util.UUID id = java.util.UUID.fromString(application.get("id").asText());
+
+        for (ApplicationStatus previous : ApplicationStatus.values()) {
+            for (ApplicationStatus next : ApplicationStatus.values()) {
+                if (previous == next) continue;
+                jdbc.update("delete from application_status_history where application_id = ?", id);
+                jdbc.update("""
+                        update job_application
+                        set status = ?, application_date = date '2024-05-01', version = 0
+                        where id = ?
+                        """, previous.name(), id);
+
+                mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                                .header("Authorization", bearer(access))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(Map.of(
+                                        "newStatus", next.name(), "version", 0,
+                                        "note", previous + " to " + next))))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.status").value(next.name()))
+                        .andExpect(jsonPath("$.version").value(1));
+
+                assertThat(jdbc.queryForObject("""
+                        select count(*) from application_status_history
+                        where application_id = ? and previous_status = ? and new_status = ?
+                        """, Integer.class, id, previous.name(), next.name())).isEqualTo(1);
+            }
+        }
+    }
+
+    @Test
+    void noOpAndLeavingSavedWithoutADateAreRejectedWithoutHistory() throws Exception {
+        String access = register("application-invalid-transition@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode application = createApplication(access, company.get("id").asText(), "Engineer");
+        String id = application.get("id").asText();
+
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"SAVED\",\"version\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("APPLICATION_STATUS_UNCHANGED"));
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"APPLIED\",\"version\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.applicationDate").exists());
+
+        assertThat(jdbc.queryForObject("select status from job_application where id = ?",
+                String.class, java.util.UUID.fromString(id))).isEqualTo("SAVED");
+        assertThat(jdbc.queryForObject("select count(*) from application_status_history",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void historyIsChronologicalImmutableAndOwnerScoped() throws Exception {
+        String owner = register("application-history-owner@example.com");
+        String stranger = register("application-history-stranger@example.com");
+        JsonNode company = createCompany(owner, "Acme");
+        JsonNode application = createApplication(owner, company.get("id").asText(), "Engineer");
+        java.util.UUID id = java.util.UUID.fromString(application.get("id").asText());
+        jdbc.update("update job_application set application_date = date '2024-05-01' where id = ?", id);
+
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"INTERVIEWING\",\"version\":0,\"note\":\"Skipped screening\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"APPLIED\",\"version\":1,\"note\":\"Moved backward\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].previousStatus").value("SAVED"))
+                .andExpect(jsonPath("$[0].newStatus").value("INTERVIEWING"))
+                .andExpect(jsonPath("$[0].note").value("Skipped screening"))
+                .andExpect(jsonPath("$[0].changedAt").exists())
+                .andExpect(jsonPath("$[1].previousStatus").value("INTERVIEWING"))
+                .andExpect(jsonPath("$[1].newStatus").value("APPLIED"));
+
+        mvc.perform(get("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(stranger)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("APPLICATION_NOT_FOUND"));
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(stranger))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"OFFER\",\"version\":2}"))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(put("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    void staleTransitionCannotOverwriteNewerStatusOrAppendHistory() throws Exception {
+        String access = register("application-status-conflict@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode application = createApplication(access, company.get("id").asText(), "Engineer");
+        java.util.UUID id = java.util.UUID.fromString(application.get("id").asText());
+        jdbc.update("update job_application set application_date = date '2024-05-01' where id = ?", id);
+
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"APPLIED\",\"version\":0}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newStatus\":\"OFFER\",\"version\":0}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("APPLICATION_VERSION_CONFLICT"));
+
+        assertThat(jdbc.queryForObject("select status from job_application where id = ?",
+                String.class, id)).isEqualTo("APPLIED");
+        assertThat(jdbc.queryForObject("select count(*) from application_status_history where application_id = ?",
+                Integer.class, id)).isEqualTo(1);
+    }
+
+    @Test
+    void historyInsertFailureRollsBackTheApplicationStatusUpdate() throws Exception {
+        String access = register("application-status-rollback@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode application = createApplication(access, company.get("id").asText(), "Engineer");
+        java.util.UUID id = java.util.UUID.fromString(application.get("id").asText());
+        jdbc.update("update job_application set application_date = date '2024-05-01' where id = ?", id);
+        jdbc.execute("""
+                alter table application_status_history
+                add constraint test_history_failure check (note <> 'FORCE_ROLLBACK')
+                """);
+        try {
+            mvc.perform(post("/api/v1/applications/{id}/status-transitions", id)
+                            .header("Authorization", bearer(access))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"newStatus\":\"APPLIED\",\"version\":0,\"note\":\"FORCE_ROLLBACK\"}"))
+                    .andExpect(status().isInternalServerError());
+        } finally {
+            jdbc.execute("alter table application_status_history drop constraint test_history_failure");
+        }
+
+        assertThat(jdbc.queryForObject("select status from job_application where id = ?",
+                String.class, id)).isEqualTo("SAVED");
+        assertThat(jdbc.queryForObject("select version from job_application where id = ?",
+                Long.class, id)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from application_status_history",
+                Integer.class)).isZero();
     }
 
     private JsonNode createCompany(String access, String name) throws Exception {

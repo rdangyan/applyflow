@@ -9,20 +9,26 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.List;
 import java.util.UUID;
 
 import static com.applyflow.application.ApplicationDtos.ApplicationResponse;
 import static com.applyflow.application.ApplicationDtos.CreateApplicationRequest;
+import static com.applyflow.application.ApplicationDtos.StatusHistoryResponse;
+import static com.applyflow.application.ApplicationDtos.StatusTransitionRequest;
 import static com.applyflow.application.ApplicationDtos.UpdateApplicationRequest;
 
 @Service
 class ApplicationService {
     private final ApplicationRepository applications;
+    private final ApplicationStatusHistoryRepository statusHistory;
     private final CompanyApplicationGateway companies;
     private final Clock clock;
 
-    ApplicationService(ApplicationRepository applications, CompanyApplicationGateway companies) {
+    ApplicationService(ApplicationRepository applications, ApplicationStatusHistoryRepository statusHistory,
+                       CompanyApplicationGateway companies) {
         this.applications = applications;
+        this.statusHistory = statusHistory;
         this.companies = companies;
         this.clock = Clock.systemUTC();
     }
@@ -70,6 +76,37 @@ class ApplicationService {
                 request.workplaceArrangement(), request.salaryMin(), request.salaryMax(), values.salaryCurrency(),
                 request.salaryPayPeriod(), request.sourceCategory(), values.sourceDetail(), clock.instant());
         return ApplicationResponse.from(save(application), company);
+    }
+
+    @Transactional(readOnly = true)
+    List<StatusHistoryResponse> history(String subject, UUID id) {
+        UUID ownerId = ownerId(subject);
+        owned(id, ownerId);
+        return statusHistory.findAllByApplicationIdAndOwnerIdOrderByChangedAtAscIdAsc(id, ownerId)
+                .stream().map(StatusHistoryResponse::from).toList();
+    }
+
+    @Transactional
+    ApplicationResponse transition(String subject, UUID id, StatusTransitionRequest request) {
+        UUID ownerId = ownerId(subject);
+        JobApplication application = owned(id, ownerId);
+        requireVersion(application, request.version());
+        if (application.getStatus() == request.newStatus()) throw ApplicationException.sameStatus();
+        if (application.getStatus() == ApplicationStatus.SAVED
+                && request.newStatus() != ApplicationStatus.SAVED
+                && application.getApplicationDate() == null) {
+            throw ApplicationException.validation("applicationDate",
+                    "is required before leaving Saved");
+        }
+
+        ApplicationStatus previousStatus = application.getStatus();
+        Instant changedAt = clock.instant();
+        application.transitionTo(request.newStatus(), changedAt);
+        JobApplication saved = save(application);
+        statusHistory.saveAndFlush(new ApplicationStatusHistory(
+                UUID.randomUUID(), id, ownerId, previousStatus, request.newStatus(), changedAt,
+                optional(request.note())));
+        return ApplicationResponse.from(saved, company(ownerId, application.getCompanyId()));
     }
 
     private CompanyReference resolveCompany(UUID ownerId, UUID companyId, String companyName) {

@@ -7,7 +7,7 @@ import App from './App'
 import { AuthProvider } from './auth/AuthContext'
 import {
   ApiError,
-  Application,
+  ApplicationStatus,
   ApplicationsService,
   AuthenticationService,
   CompaniesService,
@@ -19,7 +19,10 @@ import {
 } from './generated'
 
 vi.mock('./generated', () => ({
-  Application: { status: { SAVED: 'SAVED' } },
+  ApplicationStatus: {
+    SAVED: 'SAVED', APPLIED: 'APPLIED', SCREENING: 'SCREENING', INTERVIEWING: 'INTERVIEWING',
+    OFFER: 'OFFER', ACCEPTED: 'ACCEPTED', REJECTED: 'REJECTED', WITHDRAWN: 'WITHDRAWN',
+  },
   EmploymentType: {
     FULL_TIME: 'FULL_TIME', PART_TIME: 'PART_TIME', CONTRACT: 'CONTRACT',
     TEMPORARY: 'TEMPORARY', INTERNSHIP: 'INTERNSHIP', OTHER: 'OTHER',
@@ -60,6 +63,8 @@ vi.mock('./generated', () => ({
     createApplication: vi.fn(),
     getApplication: vi.fn(),
     updateApplication: vi.fn(),
+    listApplicationStatusHistory: vi.fn(),
+    transitionApplicationStatus: vi.fn(),
   },
   OpenAPI: {},
 }))
@@ -96,7 +101,7 @@ const application = {
   id: '01e42f7a-6e72-4b9c-a62c-11cc1ca84218',
   company: { id: company.id, name: company.name },
   jobTitle: 'Senior Engineer',
-  status: Application.status.SAVED,
+  status: ApplicationStatus.SAVED,
   createdAt: '2026-07-23T00:00:00Z',
   updatedAt: '2026-07-23T00:00:00Z',
   version: 0,
@@ -146,6 +151,10 @@ describe('identity workflow', () => {
     vi.mocked(ApplicationsService.createApplication).mockResolvedValue(application)
     vi.mocked(ApplicationsService.getApplication).mockResolvedValue(application)
     vi.mocked(ApplicationsService.updateApplication).mockResolvedValue({ ...application, version: 1 })
+    vi.mocked(ApplicationsService.listApplicationStatusHistory).mockResolvedValue([])
+    vi.mocked(ApplicationsService.transitionApplicationStatus).mockResolvedValue({
+      ...application, status: ApplicationStatus.APPLIED, version: 1,
+    })
   })
 
   it('redirects an anonymous visitor away from the protected workspace', async () => {
@@ -466,5 +475,42 @@ describe('identity workflow', () => {
     expect(await screen.findByText(/updated elsewhere/)).toBeVisible()
     expect(screen.getByDisplayValue('My stale edit')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Load latest' })).toBeVisible()
+  })
+
+  it('explicitly changes status and renders chronological history with local times and notes', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [company] })
+    const history = [{
+      id: '57355da9-69bc-47cc-900d-42df9055719f',
+      applicationId: application.id,
+      previousStatus: ApplicationStatus.SAVED,
+      newStatus: ApplicationStatus.APPLIED,
+      changedAt: '2026-07-23T18:00:00Z',
+      note: 'Submitted through the company site',
+    }]
+    vi.mocked(ApplicationsService.listApplicationStatusHistory)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(history)
+    renderApp(`/app/applications/${application.id}`)
+
+    await screen.findByRole('heading', { name: 'Senior Engineer' })
+    fireEvent.change(screen.getByLabelText(/Move to status/), { target: { value: ApplicationStatus.APPLIED } })
+    fireEvent.change(screen.getByLabelText(/Transition note/), {
+      target: { value: 'Submitted through the company site' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Change status' }))
+
+    await waitFor(() => expect(ApplicationsService.transitionApplicationStatus).toHaveBeenCalledWith({
+      applicationId: application.id,
+      requestBody: {
+        newStatus: ApplicationStatus.APPLIED,
+        note: 'Submitted through the company site',
+        version: 0,
+      },
+    }))
+    const timeline = await screen.findByRole('list', { name: 'Status history' })
+    expect(timeline).toHaveTextContent('Saved → Applied')
+    expect(timeline).toHaveTextContent('Submitted through the company site')
+    expect(screen.getByText('Status moved to Applied.')).toBeVisible()
   })
 })

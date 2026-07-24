@@ -13,6 +13,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.net.URI;
@@ -80,6 +81,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     ProblemDetail handleNotFound(NoResourceFoundException exception, HttpServletRequest request) {
         return problem(HttpStatus.NOT_FOUND, "Resource not found", "RESOURCE_NOT_FOUND", request);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ProblemDetail handleMethodNotAllowed(HttpRequestMethodNotSupportedException exception,
+                                         HttpServletRequest request) {
+        return problem(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed", "METHOD_NOT_ALLOWED", request);
     }
 
     @ExceptionHandler(Exception.class)

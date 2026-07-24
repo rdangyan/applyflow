@@ -15,8 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static com.applyflow.application.ApplicationDtos.ApplicationResponse;
 import static com.applyflow.application.ApplicationDtos.CreateApplicationRequest;
+import static com.applyflow.application.ApplicationDtos.StatusHistoryResponse;
+import static com.applyflow.application.ApplicationDtos.StatusTransitionRequest;
 import static com.applyflow.application.ApplicationDtos.UpdateApplicationRequest;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -46,5 +49,18 @@ class ApplicationController {
                                @PathVariable UUID applicationId,
                                @Valid @RequestBody UpdateApplicationRequest request) {
         return applicationService.update(jwt.getSubject(), applicationId, request);
+    }
+
+    @GetMapping("/{applicationId}/status-transitions")
+    List<StatusHistoryResponse> history(@AuthenticationPrincipal Jwt jwt,
+                                        @PathVariable UUID applicationId) {
+        return applicationService.history(jwt.getSubject(), applicationId);
+    }
+
+    @PostMapping("/{applicationId}/status-transitions")
+    ApplicationResponse transition(@AuthenticationPrincipal Jwt jwt,
+                                   @PathVariable UUID applicationId,
+                                   @Valid @RequestBody StatusTransitionRequest request) {
+        return applicationService.transition(jwt.getSubject(), applicationId, request);
     }
 }
