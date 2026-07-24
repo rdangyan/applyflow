@@ -25,6 +25,45 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Application' }
         default: { $ref: '#/components/responses/Problem' }
+  /api/v1/applications/{applicationId}:
+    parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getApplication
+      tags: [Applications]
+      summary: Get an owned application's complete details
+      description: Other users' application identifiers behave as unavailable resources.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Complete application details and company context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      operationId: updateApplication
+      tags: [Applications]
+      summary: Update an owned application
+      description: >
+        Replaces editable details using the last-read version. Stale versions return 409 Conflict.
+        Application dates are local calendar dates and may be backdated.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateApplicationRequest' }
+      responses:
+        '200':
+          description: Updated application
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        default: { $ref: '#/components/responses/Problem' }
   /api/v1/companies:
     get:
       operationId: listCompanies
@@ -326,6 +365,11 @@ components:
           nullable: true
           description: A unique name-only company to create in the same transaction
         jobTitle: { type: string, minLength: 1, maxLength: 300 }
+        applicationDate:
+          type: string
+          format: date
+          nullable: true
+          description: The user's local calendar date; required after Saved
         postingUrl: { type: string, maxLength: 2048, nullable: true }
         location: { type: string, maxLength: 200, nullable: true }
         description: { type: string, maxLength: 20000, nullable: true }
@@ -350,6 +394,44 @@ components:
           allOf: [{ $ref: '#/components/schemas/SourceCategory' }]
           nullable: true
         sourceDetail: { type: string, maxLength: 500, nullable: true }
+    UpdateApplicationRequest:
+      type: object
+      required: [companyId, jobTitle, version]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+          description: An owned company; changing companies requires an active company
+        jobTitle: { type: string, minLength: 1, maxLength: 300 }
+        applicationDate:
+          type: string
+          format: date
+          nullable: true
+          description: The user's local calendar date; required after Saved
+        postingUrl: { type: string, maxLength: 2048, nullable: true }
+        location: { type: string, maxLength: 200, nullable: true }
+        description: { type: string, maxLength: 20000, nullable: true }
+        notes: { type: string, maxLength: 10000, nullable: true }
+        employmentType:
+          allOf: [{ $ref: '#/components/schemas/EmploymentType' }]
+          nullable: true
+        workplaceArrangement:
+          allOf: [{ $ref: '#/components/schemas/WorkplaceArrangement' }]
+          nullable: true
+        salaryMin: { type: number, minimum: 0, nullable: true }
+        salaryMax: { type: number, minimum: 0, nullable: true }
+        salaryCurrency:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+          nullable: true
+        salaryPayPeriod:
+          allOf: [{ $ref: '#/components/schemas/PayPeriod' }]
+          nullable: true
+        sourceCategory:
+          allOf: [{ $ref: '#/components/schemas/SourceCategory' }]
+          nullable: true
+        sourceDetail: { type: string, maxLength: 500, nullable: true }
+        version: { type: integer, format: int64, minimum: 0 }
     Application:
       type: object
       required: [id, company, jobTitle, status, createdAt, updatedAt, version]
@@ -357,7 +439,13 @@ components:
         id: { type: string, format: uuid }
         company: { $ref: '#/components/schemas/ApplicationCompany' }
         jobTitle: { type: string }
-        status: { type: string, enum: [SAVED] }
+        status:
+          type: string
+          enum: [SAVED, APPLIED, SCREENING, INTERVIEWING, OFFER, ACCEPTED, REJECTED, WITHDRAWN]
+        applicationDate:
+          type: string
+          format: date
+          nullable: true
         postingUrl: { type: string, nullable: true }
         location: { type: string, nullable: true }
         description: { type: string, nullable: true }

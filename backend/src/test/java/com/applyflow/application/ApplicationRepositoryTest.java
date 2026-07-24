@@ -31,7 +31,7 @@ class ApplicationRepositoryTest {
         UUID companyId = company(firstOwner);
         Instant now = Instant.now();
         JobApplication application = applications.saveAndFlush(new JobApplication(
-                UUID.randomUUID(), firstOwner, companyId, "Engineer", null, null, null, null,
+                UUID.randomUUID(), firstOwner, companyId, "Engineer", null, null, null, null, null,
                 null, null, null, null, null, null, null, null, now));
 
         assertThat(applications.findByIdAndOwnerId(application.getId(), firstOwner)).isPresent();

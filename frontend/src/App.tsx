@@ -21,6 +21,7 @@ import type { DeviceSession } from './generated'
 import { browserTimeZone, formatDateTime, validTimeZone } from './dateTime'
 import CompanyWorkspace from './company/CompanyWorkspace'
 import ApplicationCapture from './application/ApplicationCapture'
+import ApplicationDetails from './application/ApplicationDetails'
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/sign-in" element={<AuthPage mode="login" />} />
         <Route path="/register" element={<AuthPage mode="register" />} />
         <Route path="/app" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
+        <Route path="/app/applications/:applicationId" element={<ProtectedRoute><ApplicationDetails /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Box>

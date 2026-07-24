@@ -25,6 +25,7 @@ export type { ProblemDetail } from './models/ProblemDetail';
 export type { RegisterRequest } from './models/RegisterRequest';
 export { SourceCategory } from './models/SourceCategory';
 export type { SystemStatus } from './models/SystemStatus';
+export type { UpdateApplicationRequest } from './models/UpdateApplicationRequest';
 export type { UpdateCompanyRequest } from './models/UpdateCompanyRequest';
 export type { UpdateProfileRequest } from './models/UpdateProfileRequest';
 export { WorkplaceArrangement } from './models/WorkplaceArrangement';

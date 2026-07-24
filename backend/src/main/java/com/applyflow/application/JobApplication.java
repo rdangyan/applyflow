@@ -10,6 +10,7 @@ import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -28,6 +29,8 @@ class JobApplication {
     private ApplicationStatus status;
     @Column(name = "posting_url", length = 2048)
     private String postingUrl;
+    @Column(name = "application_date")
+    private LocalDate applicationDate;
     @Column(length = 200)
     private String location;
     @Column(length = 20000)
@@ -64,7 +67,8 @@ class JobApplication {
 
     protected JobApplication() {}
 
-    JobApplication(UUID id, UUID ownerId, UUID companyId, String jobTitle, String postingUrl, String location,
+    JobApplication(UUID id, UUID ownerId, UUID companyId, String jobTitle, LocalDate applicationDate,
+                   String postingUrl, String location,
                    String description, String notes, EmploymentType employmentType,
                    WorkplaceArrangement workplaceArrangement, BigDecimal salaryMin, BigDecimal salaryMax,
                    String salaryCurrency, PayPeriod salaryPayPeriod, SourceCategory sourceCategory,
@@ -74,6 +78,7 @@ class JobApplication {
         this.companyId = companyId;
         this.jobTitle = jobTitle;
         this.status = ApplicationStatus.SAVED;
+        this.applicationDate = applicationDate;
         this.postingUrl = postingUrl;
         this.location = location;
         this.description = description;
@@ -96,6 +101,7 @@ class JobApplication {
     String getJobTitle() { return jobTitle; }
     ApplicationStatus getStatus() { return status; }
     String getPostingUrl() { return postingUrl; }
+    LocalDate getApplicationDate() { return applicationDate; }
     String getLocation() { return location; }
     String getDescription() { return description; }
     String getNotes() { return notes; }
@@ -110,9 +116,32 @@ class JobApplication {
     Instant getCreatedAt() { return createdAt; }
     Instant getUpdatedAt() { return updatedAt; }
     long getVersion() { return version; }
+
+    void update(UUID companyId, String jobTitle, LocalDate applicationDate, String postingUrl, String location,
+                String description, String notes, EmploymentType employmentType,
+                WorkplaceArrangement workplaceArrangement, BigDecimal salaryMin, BigDecimal salaryMax,
+                String salaryCurrency, PayPeriod salaryPayPeriod, SourceCategory sourceCategory,
+                String sourceDetail, Instant now) {
+        this.companyId = companyId;
+        this.jobTitle = jobTitle;
+        this.applicationDate = applicationDate;
+        this.postingUrl = postingUrl;
+        this.location = location;
+        this.description = description;
+        this.notes = notes;
+        this.employmentType = employmentType;
+        this.workplaceArrangement = workplaceArrangement;
+        this.salaryMin = salaryMin;
+        this.salaryMax = salaryMax;
+        this.salaryCurrency = salaryCurrency;
+        this.salaryPayPeriod = salaryPayPeriod;
+        this.sourceCategory = sourceCategory;
+        this.sourceDetail = sourceDetail;
+        this.updatedAt = now;
+    }
 }
 
-enum ApplicationStatus { SAVED }
+enum ApplicationStatus { SAVED, APPLIED, SCREENING, INTERVIEWING, OFFER, ACCEPTED, REJECTED, WITHDRAWN }
 enum EmploymentType { FULL_TIME, PART_TIME, CONTRACT, TEMPORARY, INTERNSHIP, OTHER }
 enum WorkplaceArrangement { REMOTE, HYBRID, ON_SITE }
 enum PayPeriod { HOURLY, MONTHLY, YEARLY }

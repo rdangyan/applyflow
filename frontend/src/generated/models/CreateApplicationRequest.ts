@@ -19,6 +19,10 @@ export type CreateApplicationRequest = {
      */
     companyName?: string | null;
     jobTitle: string;
+    /**
+     * The user's local calendar date; required after Saved
+     */
+    applicationDate?: string | null;
     postingUrl?: string | null;
     location?: string | null;
     description?: string | null;

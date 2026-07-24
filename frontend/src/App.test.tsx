@@ -5,7 +5,18 @@ import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { AuthProvider } from './auth/AuthContext'
-import { ApiError, Application, ApplicationsService, AuthenticationService, CompaniesService, OpenAPI } from './generated'
+import {
+  ApiError,
+  Application,
+  ApplicationsService,
+  AuthenticationService,
+  CompaniesService,
+  EmploymentType,
+  OpenAPI,
+  PayPeriod,
+  SourceCategory,
+  WorkplaceArrangement,
+} from './generated'
 
 vi.mock('./generated', () => ({
   Application: { status: { SAVED: 'SAVED' } },
@@ -47,6 +58,8 @@ vi.mock('./generated', () => ({
   },
   ApplicationsService: {
     createApplication: vi.fn(),
+    getApplication: vi.fn(),
+    updateApplication: vi.fn(),
   },
   OpenAPI: {},
 }))
@@ -131,6 +144,8 @@ describe('identity workflow', () => {
     vi.mocked(CompaniesService.archiveCompany).mockResolvedValue({ ...company, archived: true, version: 1 })
     vi.mocked(CompaniesService.restoreCompany).mockResolvedValue({ ...company, archived: false, version: 2 })
     vi.mocked(ApplicationsService.createApplication).mockResolvedValue(application)
+    vi.mocked(ApplicationsService.getApplication).mockResolvedValue(application)
+    vi.mocked(ApplicationsService.updateApplication).mockResolvedValue({ ...application, version: 1 })
   })
 
   it('redirects an anonymous visitor away from the protected workspace', async () => {
@@ -379,5 +394,77 @@ describe('identity workflow', () => {
 
     expect(await screen.findByText('Salary maximum must be at least the minimum.')).toBeVisible()
     expect(ApplicationsService.createApplication).not.toHaveBeenCalled()
+  })
+
+  it('shows every application detail and submits a backdated local calendar date', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [company] })
+    vi.mocked(ApplicationsService.getApplication).mockResolvedValue({
+      ...application,
+      postingUrl: 'https://jobs.example/42',
+      location: 'Vancouver',
+      description: 'Build useful things',
+      notes: 'Ask about the team',
+      employmentType: EmploymentType.FULL_TIME,
+      workplaceArrangement: WorkplaceArrangement.HYBRID,
+      salaryMin: 120000,
+      salaryMax: 150000,
+      salaryCurrency: 'CAD',
+      salaryPayPeriod: PayPeriod.YEARLY,
+      sourceCategory: SourceCategory.REFERRAL,
+      sourceDetail: 'Former colleague',
+    })
+    vi.mocked(ApplicationsService.updateApplication).mockResolvedValue({
+      ...application,
+      jobTitle: 'Principal Engineer',
+      applicationDate: '2024-01-15',
+      version: 1,
+    })
+    renderApp(`/app/applications/${application.id}`)
+
+    expect(await screen.findByRole('heading', { name: 'Senior Engineer' })).toBeVisible()
+    expect(screen.getByDisplayValue('Build useful things')).toBeVisible()
+    expect(screen.getByDisplayValue('Former colleague')).toBeVisible()
+    expect(screen.getByText(/America\/Vancouver/)).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText(/Job title/), { target: { value: 'Principal Engineer' } })
+    fireEvent.change(screen.getByLabelText(/Application date/), { target: { value: '2024-01-15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(ApplicationsService.updateApplication).toHaveBeenCalledWith({
+      applicationId: application.id,
+      requestBody: expect.objectContaining({
+        companyId: company.id,
+        jobTitle: 'Principal Engineer',
+        applicationDate: '2024-01-15',
+        version: 0,
+      }),
+    }))
+    expect(await screen.findByText('Application details saved.')).toBeVisible()
+  })
+
+  it('keeps stale edits visible and offers to load the latest application', async () => {
+    vi.mocked(AuthenticationService.refresh).mockResolvedValue(authentication)
+    vi.mocked(CompaniesService.listCompanies).mockResolvedValue({ companies: [company] })
+    vi.mocked(ApplicationsService.updateApplication).mockRejectedValue(new ApiError(
+      { method: 'PUT', url: '/api/v1/applications/{applicationId}' },
+      {
+        url: `/api/v1/applications/${application.id}`,
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        body: { code: 'APPLICATION_VERSION_CONFLICT', detail: 'The application changed since it was last read' },
+      },
+      'Conflict',
+    ))
+    renderApp(`/app/applications/${application.id}`)
+
+    await screen.findByRole('heading', { name: 'Senior Engineer' })
+    fireEvent.change(screen.getByLabelText(/Job title/), { target: { value: 'My stale edit' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByText(/updated elsewhere/)).toBeVisible()
+    expect(screen.getByDisplayValue('My stale edit')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Load latest' })).toBeVisible()
   })
 })

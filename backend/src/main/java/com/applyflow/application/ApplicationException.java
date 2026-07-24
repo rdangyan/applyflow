@@ -22,6 +22,15 @@ public class ApplicationException extends RuntimeException {
                 "APPLICATION_COMPANY_UNAVAILABLE", Map.of("companyId", "must identify one of your active companies"));
     }
 
+    static ApplicationException notFound() {
+        return new ApplicationException("Application not found", "APPLICATION_NOT_FOUND", Map.of());
+    }
+
+    static ApplicationException staleVersion() {
+        return new ApplicationException("The application changed since it was last read",
+                "APPLICATION_VERSION_CONFLICT", Map.of());
+    }
+
     public String getCode() { return code; }
     public Map<String, String> getFieldErrors() { return fieldErrors; }
 }

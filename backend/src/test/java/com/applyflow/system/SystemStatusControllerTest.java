@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,5 +38,12 @@ class SystemStatusControllerTest {
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
                 .andExpect(jsonPath("$.traceId", matchesPattern("[0-9a-f-]{36}")))
                 .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void nestedApplicationRoutesRefreshThroughTheSpaEntryPoint() throws Exception {
+        mockMvc.perform(get("/app/applications/f672c646-16e4-4a78-a4b7-a2e1aab6cd2a"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/index.html"));
     }
 }

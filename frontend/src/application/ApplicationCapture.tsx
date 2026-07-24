@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import BookmarkAddOutlinedIcon from '@mui/icons-material/BookmarkAddOutlined'
 import {
   Alert,
@@ -87,6 +88,7 @@ export default function ApplicationCapture() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [savedApplicationId, setSavedApplicationId] = useState('')
   const [saving, setSaving] = useState(false)
 
   const loadCompanies = useCallback(async () => {
@@ -145,6 +147,7 @@ export default function ApplicationCapture() {
     event.preventDefault()
     setError('')
     setSuccess('')
+    setSavedApplicationId('')
     const validation = validate()
     if (!validation.valid) return
     const request: CreateApplicationRequest = {
@@ -170,6 +173,7 @@ export default function ApplicationCapture() {
       const response = await ApplicationsService.createApplication({ requestBody: request })
       if (!isApplication(response)) throw new Error(response.detail)
       setSuccess(`Saved ${response.jobTitle} at ${response.company.name}.`)
+      setSavedApplicationId(response.id)
       setCompanies((current) => current.some((company) => company.id === response.company.id)
         ? current
         : [...current, {
@@ -200,7 +204,17 @@ export default function ApplicationCapture() {
 
       <Box component="form" onSubmit={(event) => void submit(event)} noValidate sx={{ mt: 3 }}>
         <Stack spacing={3}>
-          {success && <Alert severity="success" aria-live="polite">{success}</Alert>}
+          {success && (
+            <Alert
+              severity="success"
+              aria-live="polite"
+              action={savedApplicationId
+                ? <Button color="inherit" component={Link} to={`/app/applications/${savedApplicationId}`}>View details</Button>
+                : undefined}
+            >
+              {success}
+            </Alert>
+          )}
           {error && <Alert severity="error">{error}</Alert>}
           {companyLoadError && (
             <Alert severity="warning" action={<Button color="inherit" size="small" onClick={() => void loadCompanies()}>Retry</Button>}>

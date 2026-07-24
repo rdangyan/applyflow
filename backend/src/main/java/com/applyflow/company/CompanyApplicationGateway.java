@@ -24,6 +24,12 @@ public class CompanyApplicationGateway {
                 .map(company -> new CompanyReference(company.getId(), company.getName()));
     }
 
+    @Transactional(readOnly = true)
+    public Optional<CompanyReference> findOwned(UUID ownerId, UUID companyId) {
+        return companies.findByIdAndOwnerId(companyId, ownerId)
+                .map(company -> new CompanyReference(company.getId(), company.getName()));
+    }
+
     @Transactional
     public CompanyReference createNameOnly(UUID ownerId, String name) {
         var company = companyService.create(ownerId.toString(),

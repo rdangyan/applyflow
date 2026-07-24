@@ -17,6 +17,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -156,10 +157,131 @@ class ApplicationControllerTest {
         assertThat(jdbc.queryForObject("select count(*) from job_application", Integer.class)).isZero();
     }
 
+    @Test
+    void ownerCanReadEveryFieldAndBackdateAnApplication() throws Exception {
+        String access = register("application-details@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode created = createApplication(access, company.get("id").asText(), "Engineer");
+
+        mvc.perform(get("/api/v1/applications/{id}", created.get("id").asText())
+                        .header("Authorization", bearer(access)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.company.name").value("Acme"))
+                .andExpect(jsonPath("$.jobTitle").value("Engineer"))
+                .andExpect(jsonPath("$.status").value("SAVED"))
+                .andExpect(jsonPath("$.applicationDate").doesNotExist())
+                .andExpect(jsonPath("$.version").value(0));
+
+        mvc.perform(put("/api/v1/applications/{id}", created.get("id").asText())
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.ofEntries(
+                                Map.entry("companyId", company.get("id").asText()),
+                                Map.entry("jobTitle", "Principal Engineer"),
+                                Map.entry("applicationDate", "2024-01-15"),
+                                Map.entry("postingUrl", "https://jobs.example/principal"),
+                                Map.entry("location", "Remote"),
+                                Map.entry("description", "Lead the platform"),
+                                Map.entry("notes", "Backdated record"),
+                                Map.entry("employmentType", "FULL_TIME"),
+                                Map.entry("workplaceArrangement", "REMOTE"),
+                                Map.entry("salaryMin", 150000),
+                                Map.entry("salaryMax", 180000),
+                                Map.entry("salaryCurrency", "usd"),
+                                Map.entry("salaryPayPeriod", "YEARLY"),
+                                Map.entry("sourceCategory", "LINKEDIN"),
+                                Map.entry("sourceDetail", "Saved posting"),
+                                Map.entry("version", 0)
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobTitle").value("Principal Engineer"))
+                .andExpect(jsonPath("$.applicationDate").value("2024-01-15"))
+                .andExpect(jsonPath("$.salaryCurrency").value("USD"))
+                .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void crossUserReadsAndWritesAreIndistinguishableFromMissingApplications() throws Exception {
+        String owner = register("application-private-owner@example.com");
+        String stranger = register("application-private-stranger@example.com");
+        JsonNode company = createCompany(owner, "Private Co");
+        JsonNode application = createApplication(owner, company.get("id").asText(), "Engineer");
+
+        mvc.perform(get("/api/v1/applications/{id}", application.get("id").asText())
+                        .header("Authorization", bearer(stranger)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("APPLICATION_NOT_FOUND"));
+        mvc.perform(put("/api/v1/applications/{id}", application.get("id").asText())
+                        .header("Authorization", bearer(stranger))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"companyId\":\"" + company.get("id").asText()
+                                + "\",\"jobTitle\":\"Stolen\",\"version\":0}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("APPLICATION_NOT_FOUND"));
+
+        assertThat(jdbc.queryForObject("select job_title from job_application where id = ?", String.class,
+                java.util.UUID.fromString(application.get("id").asText()))).isEqualTo("Engineer");
+    }
+
+    @Test
+    void staleUpdateReturnsARecoverableConflictAndPreservesNewerData() throws Exception {
+        String access = register("application-conflict@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode application = createApplication(access, company.get("id").asText(), "Engineer");
+        String id = application.get("id").asText();
+        String companyId = company.get("id").asText();
+
+        mvc.perform(put("/api/v1/applications/{id}", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"companyId\":\"" + companyId
+                                + "\",\"jobTitle\":\"Newer title\",\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+
+        mvc.perform(put("/api/v1/applications/{id}", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"companyId\":\"" + companyId
+                                + "\",\"jobTitle\":\"Stale title\",\"version\":0}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("APPLICATION_VERSION_CONFLICT"));
+
+        mvc.perform(get("/api/v1/applications/{id}", id).header("Authorization", bearer(access)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobTitle").value("Newer title"))
+                .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void nonSavedApplicationRequiresAnApplicationDateOnUpdate() throws Exception {
+        String access = register("application-date-required@example.com");
+        JsonNode company = createCompany(access, "Acme");
+        JsonNode application = createApplication(access, company.get("id").asText(), "Engineer");
+        java.util.UUID id = java.util.UUID.fromString(application.get("id").asText());
+        jdbc.update("update job_application set status = 'APPLIED', application_date = date '2024-05-01' where id = ?", id);
+
+        mvc.perform(put("/api/v1/applications/{id}", id)
+                        .header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"companyId\":\"" + company.get("id").asText()
+                                + "\",\"jobTitle\":\"Engineer\",\"version\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.applicationDate").exists());
+    }
+
     private JsonNode createCompany(String access, String name) throws Exception {
         return body(mvc.perform(post("/api/v1/companies").header("Authorization", bearer(access))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("name", name))))
+                .andExpect(status().isCreated()).andReturn());
+    }
+
+    private JsonNode createApplication(String access, String companyId, String jobTitle) throws Exception {
+        return body(mvc.perform(post("/api/v1/applications").header("Authorization", bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "companyId", companyId, "jobTitle", jobTitle))))
                 .andExpect(status().isCreated()).andReturn());
     }
 

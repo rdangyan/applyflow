@@ -67,7 +67,12 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ApplicationException.class)
     ProblemDetail handleApplication(ApplicationException exception, HttpServletRequest request) {
-        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, exception.getMessage(), exception.getCode(), request);
+        HttpStatus status = switch (exception.getCode()) {
+            case "APPLICATION_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+            case "APPLICATION_VERSION_CONFLICT" -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        ProblemDetail problem = problem(status, exception.getMessage(), exception.getCode(), request);
         if (!exception.getFieldErrors().isEmpty()) problem.setProperty("fieldErrors", exception.getFieldErrors());
         return problem;
     }
